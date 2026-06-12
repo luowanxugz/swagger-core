@@ -18,6 +18,7 @@ import io.swagger.v3.core.util.PathUtils;
 import io.swagger.v3.core.util.ReflectionUtils;
 import io.swagger.v3.jaxrs2.ext.OpenAPIExtension;
 import io.swagger.v3.jaxrs2.ext.OpenAPIExtensions;
+import io.swagger.v3.jaxrs2.util.JaxRsAnnotationLoader;
 import io.swagger.v3.jaxrs2.util.ReaderUtils;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Hidden;
@@ -49,7 +50,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.ws.rs.ApplicationPath;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Application;
@@ -176,9 +176,9 @@ public class Reader implements OpenApiReader {
             }
             if (config != null && Boolean.TRUE.equals(config.isAlwaysResolveAppPath()) && !Boolean.TRUE.equals(config.isSkipResolveAppPath())) {
                 if (Application.class.isAssignableFrom(cls)) {
-                    ApplicationPath appPathAnnotation = ReflectionUtils.getAnnotation(cls, ApplicationPath.class);
-                    if (appPathAnnotation != null) {
-                        appPath = appPathAnnotation.value();
+                    String resolvedAppPath = JaxRsAnnotationLoader.getApplicationPathValue(cls);
+                    if (resolvedAppPath != null) {
+                        appPath = resolvedAppPath;
                     }
                 }
             }
@@ -235,18 +235,14 @@ public class Reader implements OpenApiReader {
     protected String resolveApplicationPath() {
         if (application != null && !Boolean.TRUE.equals(config.isSkipResolveAppPath())) {
             Class<?> applicationToScan = this.application.getClass();
-            ApplicationPath applicationPath;
-            //search up in the hierarchy until we find one with the annotation, this is needed because for example Weld proxies will not have the annotation and the right class will be the superClass
-            while ((applicationPath = applicationToScan.getAnnotation(ApplicationPath.class)) == null && !applicationToScan.getSuperclass().equals(Application.class)) {
+            String applicationPath;
+            while ((applicationPath = JaxRsAnnotationLoader.getApplicationPathValue(applicationToScan)) == null && !applicationToScan.getSuperclass().equals(Application.class)) {
                 applicationToScan = applicationToScan.getSuperclass();
             }
 
-            if (applicationPath != null) {
-                if (StringUtils.isNotBlank(applicationPath.value())) {
-                    return applicationPath.value();
-                }
+            if (StringUtils.isNotBlank(applicationPath)) {
+                return applicationPath;
             }
-            // look for inner application, e.g. ResourceConfig
             try {
                 Application innerApp = application;
                 Method m = application.getClass().getMethod("getApplication");
@@ -259,11 +255,9 @@ public class Reader implements OpenApiReader {
                         break;
                     }
                     innerApp = retrievedApp;
-                    applicationPath = innerApp.getClass().getAnnotation(ApplicationPath.class);
-                    if (applicationPath != null) {
-                        if (StringUtils.isNotBlank(applicationPath.value())) {
-                            return applicationPath.value();
-                        }
+                    applicationPath = JaxRsAnnotationLoader.getApplicationPathValue(innerApp.getClass());
+                    if (StringUtils.isNotBlank(applicationPath)) {
+                        return applicationPath;
                     }
                     m = innerApp.getClass().getMethod("getApplication");
                 }
@@ -286,7 +280,7 @@ public class Reader implements OpenApiReader {
 
         Hidden hidden = cls.getAnnotation(Hidden.class);
         // class path
-        final javax.ws.rs.Path apiPath = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Path.class);
+        final String apiPath = JaxRsAnnotationLoader.getPathValue(cls);
         final boolean openapi31 = Boolean.TRUE.equals(config.isOpenAPI31());
 
         if (
@@ -450,7 +444,7 @@ public class Reader implements OpenApiReader {
             boolean methodDeprecated = ReflectionUtils.getAnnotation(method, Deprecated.class) != null
                     || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(method, KotlinDetector.getKotlinDeprecated()) != null);
 
-            javax.ws.rs.Path methodPath = ReflectionUtils.getAnnotation(method, javax.ws.rs.Path.class);
+            String methodPath = JaxRsAnnotationLoader.getPathValue(method);
 
             String operationPath = ReaderUtils.getPath(apiPath, methodPath, parentPath, isSubresource);
 
@@ -1680,7 +1674,7 @@ public class Reader implements OpenApiReader {
             type = rawType;
         }
 
-        if (method.getAnnotation(javax.ws.rs.Path.class) != null) {
+        if (JaxRsAnnotationLoader.hasPathAnnotation(method)) {
             if (ReaderUtils.extractOperationMethod(method, null) == null) {
                 return type;
             }

@@ -1,0 +1,301 @@
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
+index b15115aaf..477ac94ec 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
+@@ -18,6 +18,7 @@ import io.swagger.v3.core.util.PathUtils;
+ import io.swagger.v3.core.util.ReflectionUtils;
+ import io.swagger.v3.jaxrs2.ext.OpenAPIExtension;
+ import io.swagger.v3.jaxrs2.ext.OpenAPIExtensions;
++import io.swagger.v3.jaxrs2.util.JaxRsAnnotationLoader;
+ import io.swagger.v3.jaxrs2.util.ReaderUtils;
+ import io.swagger.v3.oas.annotations.ExternalDocumentation;
+ import io.swagger.v3.oas.annotations.Hidden;
+@@ -49,7 +50,6 @@ import org.apache.commons.lang3.StringUtils;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.ws.rs.ApplicationPath;
+ import javax.ws.rs.Consumes;
+ import javax.ws.rs.Produces;
+ import javax.ws.rs.core.Application;
+@@ -176,9 +176,9 @@ public class Reader implements OpenApiReader {
+             }
+             if (config != null && Boolean.TRUE.equals(config.isAlwaysResolveAppPath()) && !Boolean.TRUE.equals(config.isSkipResolveAppPath())) {
+                 if (Application.class.isAssignableFrom(cls)) {
+-                    ApplicationPath appPathAnnotation = ReflectionUtils.getAnnotation(cls, ApplicationPath.class);
+-                    if (appPathAnnotation != null) {
+-                        appPath = appPathAnnotation.value();
++                    String resolvedAppPath = JaxRsAnnotationLoader.getApplicationPathValue(cls);
++                    if (resolvedAppPath != null) {
++                        appPath = resolvedAppPath;
+                     }
+                 }
+             }
+@@ -235,18 +235,14 @@ public class Reader implements OpenApiReader {
+     protected String resolveApplicationPath() {
+         if (application != null && !Boolean.TRUE.equals(config.isSkipResolveAppPath())) {
+             Class<?> applicationToScan = this.application.getClass();
+-            ApplicationPath applicationPath;
+-            //search up in the hierarchy until we find one with the annotation, this is needed because for example Weld proxies will not have the annotation and the right class will be the superClass
+-            while ((applicationPath = applicationToScan.getAnnotation(ApplicationPath.class)) == null && !applicationToScan.getSuperclass().equals(Application.class)) {
++            String applicationPath;
++            while ((applicationPath = JaxRsAnnotationLoader.getApplicationPathValue(applicationToScan)) == null && !applicationToScan.getSuperclass().equals(Application.class)) {
+                 applicationToScan = applicationToScan.getSuperclass();
+             }
+ 
+-            if (applicationPath != null) {
+-                if (StringUtils.isNotBlank(applicationPath.value())) {
+-                    return applicationPath.value();
+-                }
++            if (StringUtils.isNotBlank(applicationPath)) {
++                return applicationPath;
+             }
+-            // look for inner application, e.g. ResourceConfig
+             try {
+                 Application innerApp = application;
+                 Method m = application.getClass().getMethod("getApplication");
+@@ -259,11 +255,9 @@ public class Reader implements OpenApiReader {
+                         break;
+                     }
+                     innerApp = retrievedApp;
+-                    applicationPath = innerApp.getClass().getAnnotation(ApplicationPath.class);
+-                    if (applicationPath != null) {
+-                        if (StringUtils.isNotBlank(applicationPath.value())) {
+-                            return applicationPath.value();
+-                        }
++                    applicationPath = JaxRsAnnotationLoader.getApplicationPathValue(innerApp.getClass());
++                    if (StringUtils.isNotBlank(applicationPath)) {
++                        return applicationPath;
+                     }
+                     m = innerApp.getClass().getMethod("getApplication");
+                 }
+@@ -286,7 +280,7 @@ public class Reader implements OpenApiReader {
+ 
+         Hidden hidden = cls.getAnnotation(Hidden.class);
+         // class path
+-        final javax.ws.rs.Path apiPath = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Path.class);
++        final String apiPath = JaxRsAnnotationLoader.getPathValue(cls);
+         final boolean openapi31 = Boolean.TRUE.equals(config.isOpenAPI31());
+ 
+         if (
+@@ -450,7 +444,7 @@ public class Reader implements OpenApiReader {
+             boolean methodDeprecated = ReflectionUtils.getAnnotation(method, Deprecated.class) != null
+                     || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(method, KotlinDetector.getKotlinDeprecated()) != null);
+ 
+-            javax.ws.rs.Path methodPath = ReflectionUtils.getAnnotation(method, javax.ws.rs.Path.class);
++            String methodPath = JaxRsAnnotationLoader.getPathValue(method);
+ 
+             String operationPath = ReaderUtils.getPath(apiPath, methodPath, parentPath, isSubresource);
+ 
+@@ -1680,7 +1674,7 @@ public class Reader implements OpenApiReader {
+             type = rawType;
+         }
+ 
+-        if (method.getAnnotation(javax.ws.rs.Path.class) != null) {
++        if (JaxRsAnnotationLoader.hasPathAnnotation(method)) {
+             if (ReaderUtils.extractOperationMethod(method, null) == null) {
+                 return type;
+             }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
+index 155ec649a..3da7da203 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
+@@ -3,6 +3,7 @@ package io.swagger.v3.jaxrs2.integration;
+ import io.github.classgraph.ClassGraph;
+ import io.github.classgraph.ScanResult;
+ import io.swagger.v3.jaxrs2.integration.api.JaxrsOpenApiScanner;
++import io.swagger.v3.jaxrs2.util.JaxRsAnnotationLoader;
+ import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+ import io.swagger.v3.oas.annotations.Webhooks;
+ import io.swagger.v3.oas.integration.IgnoredPackages;
+@@ -12,7 +13,6 @@ import org.apache.commons.lang3.StringUtils;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.ws.rs.ApplicationPath;
+ import javax.ws.rs.core.Application;
+ import java.util.HashMap;
+ import java.util.HashSet;
+@@ -63,7 +63,6 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
+         Set<String> acceptablePackages = new HashSet<>();
+         Set<Class<?>> output = new HashSet<>();
+ 
+-        // if classes are passed, use them
+         if (openApiConfiguration.getResourceClasses() != null && !openApiConfiguration.getResourceClasses().isEmpty()) {
+             for (String className : openApiConfiguration.getResourceClasses()) {
+                 if (!isIgnored(className)) {
+@@ -90,13 +89,17 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
+                 allowAllPackages = true;
+             }
+         }
+-        final Set<Class<?>> classes;
++        final Set<Class<?>> classes = new HashSet<>();
+         try (ScanResult scanResult = graph.scan()) {
+-            classes = new HashSet<>(scanResult.getClassesWithAnnotation(javax.ws.rs.Path.class.getName()).loadClasses());
++            for (String annotationName : JaxRsAnnotationLoader.getPathAnnotationNames()) {
++                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(annotationName).loadClasses()));
++            }
+             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(OpenAPIDefinition.class.getName()).loadClasses()));
+             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(Webhooks.class.getName()).loadClasses()));
+             if (Boolean.TRUE.equals(openApiConfiguration.isAlwaysResolveAppPath())) {
+-                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(ApplicationPath.class.getName()).loadClasses()));
++                for (String annotationName : JaxRsAnnotationLoader.getApplicationPathAnnotationNames()) {
++                    classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(annotationName).loadClasses()));
++                }
+             }
+         }
+ 
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+index e3bb41d9d..508653275 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+@@ -11,8 +11,6 @@ import io.swagger.v3.oas.models.media.Schema;
+ import io.swagger.v3.oas.models.parameters.Parameter;
+ import org.apache.commons.lang3.StringUtils;
+ 
+-import javax.ws.rs.HttpMethod;
+-import javax.ws.rs.core.Context;
+ import java.lang.annotation.Annotation;
+ import java.lang.reflect.Constructor;
+ import java.lang.reflect.Field;
+@@ -35,6 +33,8 @@ public class ReaderUtils {
+     private static final String HEAD_METHOD = "head";
+     private static final String OPTIONS_METHOD = "options";
+     private static final String PATH_DELIMITER = "/";
++    private static final String JAVAX_CONTEXT = "javax.ws.rs.core.Context";
++    private static final String JAKARTA_CONTEXT = "jakarta.ws.rs.core.Context";
+ 
+     public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
+         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, null);
+@@ -43,13 +43,7 @@ public class ReaderUtils {
+     public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation, Schema.SchemaResolution schemaResolution) {
+         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, schemaResolution, false);
+     }
+-    /**
+-     * Collects constructor-level parameters from class.
+-     *
+-     * @param cls        is a class for collecting
+-     * @param components
+-     * @return the collection of supported parameters
+-     */
++
+     public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation, Schema.SchemaResolution schemaResolution, boolean openapi31) {
+         if (cls.isLocalClass() || (cls.isMemberClass() && !Modifier.isStatic(cls.getModifiers()))) {
+             return Collections.emptyList();
+@@ -76,7 +70,7 @@ public class ReaderUtils {
+                 } else {
+                     final Type genericParameterType = genericParameterTypes[i];
+                     final List<Parameter> tmpParameters = collectParameters(genericParameterType, tmpAnnotations, components, classConsumes, jsonViewAnnotation);
+-                    if (! tmpParameters.isEmpty()) {
++                    if (!tmpParameters.isEmpty()) {
+                         for (Parameter tmpParameter : tmpParameters) {
+                             Parameter processedParameter = ParameterProcessor.applyAnnotations(
+                                     tmpParameter,
+@@ -106,13 +100,6 @@ public class ReaderUtils {
+         return selected;
+     }
+ 
+-    /**
+-     * Collects field-level parameters from class.
+-     *
+-     * @param cls        is a class for collecting
+-     * @param components
+-     * @return the collection of supported parameters
+-     */
+     public static List<Parameter> collectFieldParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
+         final List<Parameter> parameters = new ArrayList<>();
+         for (Field field : ReflectionUtils.getDeclaredFields(cls)) {
+@@ -131,7 +118,8 @@ public class ReaderUtils {
+ 
+     private static boolean isContext(List<Annotation> annotations) {
+         for (Annotation annotation : annotations) {
+-            if (annotation instanceof Context) {
++            String annotationName = annotation.annotationType().getName();
++            if (JAVAX_CONTEXT.equals(annotationName) || JAKARTA_CONTEXT.equals(annotationName)) {
+                 return true;
+             }
+         }
+@@ -169,31 +157,21 @@ public class ReaderUtils {
+         return false;
+     }
+ 
+-    public static String getPath(javax.ws.rs.Path classLevelPath, javax.ws.rs.Path methodLevelPath, String parentPath, boolean isSubresource) {
++    public static String getPath(String classLevelPath, String methodLevelPath, String parentPath, boolean isSubresource) {
+         if (classLevelPath == null && methodLevelPath == null && StringUtils.isEmpty(parentPath)) {
+             return null;
+         }
+         StringBuilder b = new StringBuilder();
+         appendPathComponent(parentPath, b);
+         if (classLevelPath != null && !isSubresource) {
+-            appendPathComponent(classLevelPath.value(), b);
++            appendPathComponent(classLevelPath, b);
+         }
+         if (methodLevelPath != null) {
+-            appendPathComponent(methodLevelPath.value(), b);
++            appendPathComponent(methodLevelPath, b);
+         }
+         return b.length() == 0 ? "/" : b.toString();
+     }
+ 
+-    /**
+-     * appends a path component string to a StringBuilder
+-     * guarantees:
+-     * <ul>
+-     *     <li>nulls, empty strings and "/" are nops</li>
+-     *     <li>output will always start with "/" and never end with "/"</li>
+-     * </ul>
+-     * @param component component to be added
+-     * @param to output
+-     */
+     private static void appendPathComponent(String component, StringBuilder to) {
+         if (component == null || component.isEmpty() || "/".equals(component)) {
+             return;
+@@ -209,25 +187,21 @@ public class ReaderUtils {
+     }
+ 
+     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
+-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
++        String httpMethod = JaxRsAnnotationLoader.getOperationMethod(method);
++        if (GET_METHOD.equals(httpMethod)) {
+             return GET_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
++        } else if (PUT_METHOD.equals(httpMethod)) {
+             return PUT_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
++        } else if (POST_METHOD.equals(httpMethod)) {
+             return POST_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
++        } else if (DELETE_METHOD.equals(httpMethod)) {
+             return DELETE_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
++        } else if (OPTIONS_METHOD.equals(httpMethod)) {
+             return OPTIONS_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
++        } else if (HEAD_METHOD.equals(httpMethod)) {
+             return HEAD_METHOD;
+-        } else if (method.getAnnotation(HttpMethod.class) != null) {
+-            HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
+-            return httpMethod.value().toLowerCase();
+-        } else if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
+-            return getHttpMethodFromCustomAnnotations(method);
+-        } else if ((ReflectionUtils.getOverriddenMethod(method)) != null) {
+-            return extractOperationMethod(ReflectionUtils.getOverriddenMethod(method), chain);
++        } else if (!StringUtils.isEmpty(httpMethod)) {
++            return httpMethod;
+         } else if (chain != null && chain.hasNext()) {
+             return chain.next().extractOperationMethod(method, chain);
+         } else {
+@@ -236,12 +210,6 @@ public class ReaderUtils {
+     }
+ 
+     public static String getHttpMethodFromCustomAnnotations(Method method) {
+-        for (Annotation methodAnnotation : method.getAnnotations()) {
+-            HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
+-            if (httpMethod != null) {
+-                return httpMethod.value().toLowerCase();
+-            }
+-        }
+-        return null;
++        return JaxRsAnnotationLoader.getHttpMethodFromCustomAnnotations(method);
+     }
+ }
