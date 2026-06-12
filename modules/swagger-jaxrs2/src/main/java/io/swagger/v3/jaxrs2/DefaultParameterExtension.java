@@ -13,17 +13,12 @@ import io.swagger.v3.core.util.ParameterProcessor;
 import io.swagger.v3.jaxrs2.ext.AbstractOpenAPIExtension;
 import io.swagger.v3.jaxrs2.ext.OpenAPIExtension;
 import io.swagger.v3.jaxrs2.ext.OpenAPIExtensions;
+import io.swagger.v3.jaxrs2.util.JaxRsAnnotationLoader;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import org.apache.commons.lang3.StringUtils;
 
-import javax.ws.rs.BeanParam;
-import javax.ws.rs.CookieParam;
-import javax.ws.rs.HeaderParam;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.MatrixParam;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -44,8 +39,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                                                Type type,
                                                Set<Type> typesToSkip,
                                                Components components,
-                                               javax.ws.rs.Consumes classConsumes,
-                                               javax.ws.rs.Consumes methodConsumes,
+                                               Annotation classConsumes,
+                                               Annotation methodConsumes,
                                                boolean includeRequestBody,
                                                JsonView jsonViewAnnotation,
                                                Iterator<OpenAPIExtension> chain) {
@@ -56,36 +51,31 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
 
         Parameter parameter = null;
         for (Annotation annotation : annotations) {
-            if (annotation instanceof QueryParam) {
-                QueryParam param = (QueryParam) annotation;
+            if (JaxRsAnnotationLoader.isAnnotationType(annotation, JaxRsAnnotationLoader.ANNOTATION_QUERY_PARAM)) {
                 Parameter qp = new Parameter();
                 qp.setIn(QUERY_PARAM);
-                qp.setName(param.value());
+                qp.setName(JaxRsAnnotationLoader.getParamAnnotationValue(annotation));
                 parameter = qp;
-            } else if (annotation instanceof PathParam) {
-                PathParam param = (PathParam) annotation;
+            } else if (JaxRsAnnotationLoader.isAnnotationType(annotation, JaxRsAnnotationLoader.ANNOTATION_PATH_PARAM)) {
                 Parameter pp = new Parameter();
                 pp.setIn(PATH_PARAM);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationLoader.getParamAnnotationValue(annotation));
                 parameter = pp;
-            } else if (annotation instanceof MatrixParam) {
-                MatrixParam param = (MatrixParam) annotation;
+            } else if (JaxRsAnnotationLoader.isAnnotationType(annotation, JaxRsAnnotationLoader.ANNOTATION_MATRIX_PARAM)) {
                 Parameter pp = new Parameter();
                 pp.setIn(PATH_PARAM);
                 pp.setStyle(Parameter.StyleEnum.MATRIX);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationLoader.getParamAnnotationValue(annotation));
                 parameter = pp;
-            } else if (annotation instanceof HeaderParam) {
-                HeaderParam param = (HeaderParam) annotation;
+            } else if (JaxRsAnnotationLoader.isAnnotationType(annotation, JaxRsAnnotationLoader.ANNOTATION_HEADER_PARAM)) {
                 Parameter pp = new Parameter();
                 pp.setIn(HEADER_PARAM);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationLoader.getParamAnnotationValue(annotation));
                 parameter = pp;
-            } else if (annotation instanceof CookieParam) {
-                CookieParam param = (CookieParam) annotation;
+            } else if (JaxRsAnnotationLoader.isAnnotationType(annotation, JaxRsAnnotationLoader.ANNOTATION_COOKIE_PARAM)) {
                 Parameter pp = new Parameter();
                 pp.setIn(COOKIE_PARAM);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationLoader.getParamAnnotationValue(annotation));
                 parameter = pp;
             } else if (annotation instanceof io.swagger.v3.oas.annotations.Parameter) {
                 if (((io.swagger.v3.oas.annotations.Parameter) annotation).hidden()) {
@@ -119,8 +109,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     type,
                     annotations,
                     components,
-                    classConsumes == null ? new String[0] : classConsumes.value(),
-                    methodConsumes == null ? new String[0] : methodConsumes.value(), jsonViewAnnotation, configuration);
+                    JaxRsAnnotationLoader.getAnnotationValue(classConsumes),
+                    JaxRsAnnotationLoader.getAnnotationValue(methodConsumes), jsonViewAnnotation, configuration);
             if (unknownParameter != null) {
                 if (StringUtils.isNotBlank(unknownParameter.getIn()) && !"form".equals(unknownParameter.getIn())) {
                     extractParametersResult.parameters.add(unknownParameter);
@@ -138,8 +128,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     type,
                     annotations,
                     components,
-                    classConsumes == null ? new String[0] : classConsumes.value(),
-                    methodConsumes == null ? new String[0] : methodConsumes.value(),
+                    JaxRsAnnotationLoader.getAnnotationValue(classConsumes),
+                    JaxRsAnnotationLoader.getAnnotationValue(methodConsumes),
                     jsonViewAnnotation,
                     openapi31,
                     this.schemaResolution);
@@ -160,10 +150,10 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
      */
 
     private boolean handleAdditionalAnnotation(List<Parameter> parameters, List<Parameter> formParameters, Annotation annotation,
-                                               final Type type, Set<Type> typesToSkip, javax.ws.rs.Consumes classConsumes,
-                                               javax.ws.rs.Consumes methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
+                                               final Type type, Set<Type> typesToSkip, Annotation classConsumes,
+                                               Annotation methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
         boolean processed = false;
-        if (BeanParam.class.isAssignableFrom(annotation.getClass())) {
+        if (JaxRsAnnotationLoader.isAnnotationType(annotation.getClass(), JaxRsAnnotationLoader.ANNOTATION_BEAN_PARAM)) {
             // Use Jackson's logic for processing Beans
             final BeanDescription beanDesc = mapper.getSerializationConfig().introspect(constructType(type));
             final List<BeanPropertyDefinition> properties = beanDesc.findProperties();
@@ -280,7 +270,7 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
 
     @Override
     protected boolean shouldIgnoreClass(Class<?> cls) {
-        return cls.getName().startsWith("javax.ws.rs.");
+        return cls.getName().startsWith("javax.ws.rs.") || cls.getName().startsWith("jakarta.ws.rs.");
     }
 
 }
