@@ -1,0 +1,968 @@
+diff --git a/modules/swagger-core/src/main/java/io/swagger/v3/core/jackson/ModelResolver.java b/modules/swagger-core/src/main/java/io/swagger/v3/core/jackson/ModelResolver.java
+index f25f99a65..84042b6a0 100644
+--- a/modules/swagger-core/src/main/java/io/swagger/v3/core/jackson/ModelResolver.java
++++ b/modules/swagger-core/src/main/java/io/swagger/v3/core/jackson/ModelResolver.java
+@@ -3364,7 +3364,7 @@ public class ModelResolver extends AbstractModelConverter implements ModelConver
+     protected boolean shouldIgnoreClass(Type type) {
+         if (type instanceof Class) {
+             Class<?> cls = (Class<?>) type;
+-            if (cls.getName().equals("javax.ws.rs.Response")) {
++            if (JaxRsAnnotationUtils.isJaxRsClass(cls.getName()) && cls.getName().endsWith(".Response")) {
+                 return true;
+             }
+         } else {
+diff --git a/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java b/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
+index 7d61984a5..d30f30eb2 100644
+--- a/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
++++ b/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
+@@ -155,7 +155,7 @@ public class ParameterProcessor {
+ 
+         // handle first FormParam as it affects Explode resolving
+         for (Annotation annotation : annotations) {
+-            if (annotation.annotationType().getName().equals("javax.ws.rs.FormParam")) {
++            if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "FormParam")) {
+                 try {
+                     String name = (String) annotation.annotationType().getMethod(VALUE_METHOD).invoke(annotation);
+                     if (StringUtils.isNotBlank(name)) {
+@@ -248,7 +248,7 @@ public class ParameterProcessor {
+                 setParameterStyle(parameter, p);
+                 setParameterExplode(parameter, p);
+ 
+-            } else if (annotation.annotationType().getName().equals("javax.ws.rs.PathParam")) {
++            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "PathParam")) {
+                 try {
+                     String name = (String) annotation.annotationType().getMethod(VALUE_METHOD).invoke(annotation);
+                     if (StringUtils.isNotBlank(name)) {
+@@ -433,9 +433,9 @@ public class ParameterProcessor {
+             String rsDefault = null;
+             if (annotations != null) {
+                 for (Annotation item : annotations) {
+-                    if ("javax.ws.rs.core.Context".equals(item.annotationType().getName())) {
++                    if (JaxRsAnnotationUtils.isJaxRsAnnotation(item, "Context", "core")) {
+                         context = true;
+-                    } else if ("javax.ws.rs.DefaultValue".equals(item.annotationType().getName())) {
++                    } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(item, "DefaultValue")) {
+                         try {
+                             rsDefault = (String) item.annotationType().getMethod(VALUE_METHOD).invoke(item);
+                         } catch (Exception ex) {
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java
+index bf6bd03df..c47dc5d5e 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java
+@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.introspect.AnnotatedMethod;
+ import com.fasterxml.jackson.databind.introspect.AnnotationMap;
+ import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
+ 
++import io.swagger.v3.core.util.JaxRsAnnotationUtils;
+ import io.swagger.v3.core.util.Json;
+ import io.swagger.v3.core.util.ParameterProcessor;
+ import io.swagger.v3.jaxrs2.ext.AbstractOpenAPIExtension;
+@@ -18,12 +19,6 @@ import io.swagger.v3.oas.models.Components;
+ import io.swagger.v3.oas.models.parameters.Parameter;
+ import org.apache.commons.lang3.StringUtils;
+ 
+-import javax.ws.rs.BeanParam;
+-import javax.ws.rs.CookieParam;
+-import javax.ws.rs.HeaderParam;
+-import javax.ws.rs.PathParam;
+-import javax.ws.rs.QueryParam;
+-import javax.ws.rs.MatrixParam;
+ import java.lang.annotation.Annotation;
+ import java.lang.reflect.Type;
+ import java.util.ArrayList;
+@@ -44,8 +39,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                                                Type type,
+                                                Set<Type> typesToSkip,
+                                                Components components,
+-                                               javax.ws.rs.Consumes classConsumes,
+-                                               javax.ws.rs.Consumes methodConsumes,
++                                               Annotation classConsumes,
++                                               Annotation methodConsumes,
+                                                boolean includeRequestBody,
+                                                JsonView jsonViewAnnotation,
+                                                Iterator<OpenAPIExtension> chain) {
+@@ -56,36 +51,31 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+ 
+         Parameter parameter = null;
+         for (Annotation annotation : annotations) {
+-            if (annotation instanceof QueryParam) {
+-                QueryParam param = (QueryParam) annotation;
++            if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "QueryParam")) {
+                 Parameter qp = new Parameter();
+                 qp.setIn(QUERY_PARAM);
+-                qp.setName(param.value());
++                qp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
+                 parameter = qp;
+-            } else if (annotation instanceof PathParam) {
+-                PathParam param = (PathParam) annotation;
++            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "PathParam")) {
+                 Parameter pp = new Parameter();
+                 pp.setIn(PATH_PARAM);
+-                pp.setName(param.value());
++                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
+                 parameter = pp;
+-            } else if (annotation instanceof MatrixParam) {
+-                MatrixParam param = (MatrixParam) annotation;
++            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "MatrixParam")) {
+                 Parameter pp = new Parameter();
+                 pp.setIn(PATH_PARAM);
+                 pp.setStyle(Parameter.StyleEnum.MATRIX);
+-                pp.setName(param.value());
++                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
+                 parameter = pp;
+-            } else if (annotation instanceof HeaderParam) {
+-                HeaderParam param = (HeaderParam) annotation;
++            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "HeaderParam")) {
+                 Parameter pp = new Parameter();
+                 pp.setIn(HEADER_PARAM);
+-                pp.setName(param.value());
++                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
+                 parameter = pp;
+-            } else if (annotation instanceof CookieParam) {
+-                CookieParam param = (CookieParam) annotation;
++            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "CookieParam")) {
+                 Parameter pp = new Parameter();
+                 pp.setIn(COOKIE_PARAM);
+-                pp.setName(param.value());
++                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
+                 parameter = pp;
+             } else if (annotation instanceof io.swagger.v3.oas.annotations.Parameter) {
+                 if (((io.swagger.v3.oas.annotations.Parameter) annotation).hidden()) {
+@@ -119,8 +109,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                     type,
+                     annotations,
+                     components,
+-                    classConsumes == null ? new String[0] : classConsumes.value(),
+-                    methodConsumes == null ? new String[0] : methodConsumes.value(), jsonViewAnnotation, configuration);
++                    classConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classConsumes),
++                    methodConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodConsumes), jsonViewAnnotation, configuration);
+             if (unknownParameter != null) {
+                 if (StringUtils.isNotBlank(unknownParameter.getIn()) && !"form".equals(unknownParameter.getIn())) {
+                     extractParametersResult.parameters.add(unknownParameter);
+@@ -138,8 +128,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                     type,
+                     annotations,
+                     components,
+-                    classConsumes == null ? new String[0] : classConsumes.value(),
+-                    methodConsumes == null ? new String[0] : methodConsumes.value(),
++                    classConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classConsumes),
++                    methodConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodConsumes),
+                     jsonViewAnnotation,
+                     openapi31,
+                     this.schemaResolution);
+@@ -150,21 +140,11 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+         return extractParametersResult;
+     }
+ 
+-    /**
+-     * Adds additional annotation processing support
+-     *
+-     * @param parameters
+-     * @param annotation
+-     * @param type
+-     * @param typesToSkip
+-     */
+-
+     private boolean handleAdditionalAnnotation(List<Parameter> parameters, List<Parameter> formParameters, Annotation annotation,
+-                                               final Type type, Set<Type> typesToSkip, javax.ws.rs.Consumes classConsumes,
+-                                               javax.ws.rs.Consumes methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
++                                               final Type type, Set<Type> typesToSkip, Annotation classConsumes,
++                                               Annotation methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
+         boolean processed = false;
+-        if (BeanParam.class.isAssignableFrom(annotation.getClass())) {
+-            // Use Jackson's logic for processing Beans
++        if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "BeanParam")) {
+             final BeanDescription beanDesc = mapper.getSerializationConfig().introspect(constructType(type));
+             final List<BeanPropertyDefinition> properties = beanDesc.findProperties();
+ 
+@@ -176,7 +156,6 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                 final Iterator<OpenAPIExtension> extensions = OpenAPIExtensions.chain();
+                 Type paramType = null;
+ 
+-                // Gather the field's details
+                 if (field != null) {
+                     paramType = field.getType();
+                     AnnotationMap annotationMap = field.getAllAnnotations();
+@@ -189,11 +168,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                     }
+                 }
+ 
+-                // Gather the setter's details but only the ones we need
+                 if (setter != null) {
+-                    // Do not set the param class/type from the setter if the values are already identified
+                     if (paramType == null) {
+-                        // paramType will stay null if there is no parameter
+                         paramType = setter.getParameterType(0);
+                     }
+                     AnnotationMap annotationMap = setter.getAllAnnotations();
+@@ -206,9 +182,7 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                     }
+                 }
+ 
+-                // Gather the getter's details but only the ones we need
+                 if (getter != null) {
+-                    // Do not set the param class/type from the getter if the values are already identified
+                     if (paramType == null) {
+                         paramType = getter.getType();
+                     }
+@@ -226,7 +200,6 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                     continue;
+                 }
+ 
+-                // skip hidden properties
+                 boolean hidden  = false;
+                 for (Annotation a : paramAnnotations) {
+                     if (a instanceof io.swagger.v3.oas.annotations.media.Schema) {
+@@ -242,7 +215,6 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                 if (hidden) {
+                     continue;
+                 }
+-                // Re-process all Bean fields and let the default swagger-jaxrs/swagger-jersey-jaxrs processors do their thing
+                 ResolvedParameter resolvedParameter = extensions.next().extractParameters(
+                         paramAnnotations,
+                         paramType,
+@@ -280,7 +252,7 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+ 
+     @Override
+     protected boolean shouldIgnoreClass(Class<?> cls) {
+-        return cls.getName().startsWith("javax.ws.rs.");
++        return JaxRsAnnotationUtils.isJaxRsClass(cls.getName());
+     }
+ 
+ }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/OperationParser.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/OperationParser.java
+index 599d1cd49..ae51b02a7 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/OperationParser.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/OperationParser.java
+@@ -1,6 +1,7 @@
+ package io.swagger.v3.jaxrs2;
+ 
+ import com.fasterxml.jackson.annotation.JsonView;
++import io.swagger.v3.core.util.JaxRsAnnotationUtils;
+ import io.swagger.v3.core.util.AnnotationsUtils;
+ import io.swagger.v3.oas.models.Components;
+ import io.swagger.v3.oas.models.links.Link;
+@@ -9,8 +10,7 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
+ import io.swagger.v3.oas.models.responses.ApiResponses;
+ import org.apache.commons.lang3.StringUtils;
+ 
+-import javax.ws.rs.Consumes;
+-import javax.ws.rs.Produces;
++import java.lang.annotation.Annotation;
+ import java.util.Map;
+ import java.util.Optional;
+ 
+@@ -18,10 +18,10 @@ public class OperationParser {
+ 
+     public static final String COMPONENTS_REF = Components.COMPONENTS_SCHEMAS_REF;
+ 
+-    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Consumes classConsumes, Consumes methodConsumes, Components components, JsonView jsonViewAnnotation) {
++    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Annotation classConsumes, Annotation methodConsumes, Components components, JsonView jsonViewAnnotation) {
+         return getRequestBody(requestBody, classConsumes, methodConsumes, components, jsonViewAnnotation, false);
+     }
+-    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Consumes classConsumes, Consumes methodConsumes, Components components, JsonView jsonViewAnnotation, boolean openapi31) {
++    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Annotation classConsumes, Annotation methodConsumes, Components components, JsonView jsonViewAnnotation, boolean openapi31) {
+         if (requestBody == null) {
+             return Optional.empty();
+         }
+@@ -56,16 +56,16 @@ public class OperationParser {
+         if (isEmpty) {
+             return Optional.empty();
+         }
+-        AnnotationsUtils.getContent(requestBody.content(), classConsumes == null ? new String[0] : classConsumes.value(),
+-                methodConsumes == null ? new String[0] : methodConsumes.value(), null, components, jsonViewAnnotation, openapi31).ifPresent(requestBodyObject::setContent);
++        AnnotationsUtils.getContent(requestBody.content(), classConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classConsumes),
++                methodConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodConsumes), null, components, jsonViewAnnotation, openapi31).ifPresent(requestBodyObject::setContent);
+         return Optional.of(requestBodyObject);
+     }
+ 
+-    public static Optional<ApiResponses> getApiResponses(final io.swagger.v3.oas.annotations.responses.ApiResponse[] responses, Produces classProduces, Produces methodProduces, Components components, JsonView jsonViewAnnotation) {
++    public static Optional<ApiResponses> getApiResponses(final io.swagger.v3.oas.annotations.responses.ApiResponse[] responses, Annotation classProduces, Annotation methodProduces, Components components, JsonView jsonViewAnnotation) {
+         return getApiResponses(responses, classProduces, methodProduces, components, jsonViewAnnotation, false, ApiResponses.DEFAULT);
+     }
+ 
+-    public static Optional<ApiResponses> getApiResponses(final io.swagger.v3.oas.annotations.responses.ApiResponse[] responses, Produces classProduces, Produces methodProduces, Components components, JsonView jsonViewAnnotation, boolean openapi31, String defaultResponseKey) {
++    public static Optional<ApiResponses> getApiResponses(final io.swagger.v3.oas.annotations.responses.ApiResponse[] responses, Annotation classProduces, Annotation methodProduces, Components components, JsonView jsonViewAnnotation, boolean openapi31, String defaultResponseKey) {
+         if (responses == null) {
+             return Optional.empty();
+         }
+@@ -91,8 +91,8 @@ public class OperationParser {
+                 }
+             }
+ 
+-            AnnotationsUtils.getContent(response.content(), classProduces == null ? new String[0] : classProduces.value(),
+-                    methodProduces == null ? new String[0] : methodProduces.value(), null, components, jsonViewAnnotation, openapi31).ifPresent(apiResponseObject::content);
++            AnnotationsUtils.getContent(response.content(), classProduces == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classProduces),
++                    methodProduces == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodProduces), null, components, jsonViewAnnotation, openapi31).ifPresent(apiResponseObject::content);
+             AnnotationsUtils.getHeaders(response.headers(), components, jsonViewAnnotation).ifPresent(apiResponseObject::headers);
+             if (StringUtils.isNotBlank(apiResponseObject.getDescription()) || apiResponseObject.getContent() != null || apiResponseObject.getHeaders() != null) {
+ 
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
+index b15115aaf..394d0081d 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
+@@ -10,6 +10,7 @@ import io.swagger.v3.core.converter.AnnotatedType;
+ import io.swagger.v3.core.converter.ModelConverters;
+ import io.swagger.v3.core.converter.ResolvedSchema;
+ import io.swagger.v3.core.util.AnnotationsUtils;
++import io.swagger.v3.core.util.JaxRsAnnotationUtils;
+ import io.swagger.v3.core.util.Json;
+ import io.swagger.v3.core.util.Json31;
+ import io.swagger.v3.core.util.KotlinDetector;
+@@ -49,10 +50,6 @@ import org.apache.commons.lang3.StringUtils;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.ws.rs.ApplicationPath;
+-import javax.ws.rs.Consumes;
+-import javax.ws.rs.Produces;
+-import javax.ws.rs.core.Application;
+ import java.io.IOException;
+ import java.lang.annotation.Annotation;
+ import java.lang.reflect.Method;
+@@ -83,7 +80,7 @@ public class Reader implements OpenApiReader {
+ 
+     protected OpenAPIConfiguration config;
+ 
+-    private Application application;
++    private Object application;
+     private OpenAPI openAPI;
+     private Components components;
+     private Paths paths;
+@@ -175,10 +172,10 @@ public class Reader implements OpenApiReader {
+                 }
+             }
+             if (config != null && Boolean.TRUE.equals(config.isAlwaysResolveAppPath()) && !Boolean.TRUE.equals(config.isSkipResolveAppPath())) {
+-                if (Application.class.isAssignableFrom(cls)) {
+-                    ApplicationPath appPathAnnotation = ReflectionUtils.getAnnotation(cls, ApplicationPath.class);
++                if (JaxRsAnnotationUtils.isApplicationClass(cls)) {
++                    Annotation appPathAnnotation = JaxRsAnnotationUtils.getAnnotation(cls, "ApplicationPath");
+                     if (appPathAnnotation != null) {
+-                        appPath = appPathAnnotation.value();
++                        appPath = JaxRsAnnotationUtils.getAnnotationValue(appPathAnnotation);
+                     }
+                 }
+             }
+@@ -235,23 +232,22 @@ public class Reader implements OpenApiReader {
+     protected String resolveApplicationPath() {
+         if (application != null && !Boolean.TRUE.equals(config.isSkipResolveAppPath())) {
+             Class<?> applicationToScan = this.application.getClass();
+-            ApplicationPath applicationPath;
+-            //search up in the hierarchy until we find one with the annotation, this is needed because for example Weld proxies will not have the annotation and the right class will be the superClass
+-            while ((applicationPath = applicationToScan.getAnnotation(ApplicationPath.class)) == null && !applicationToScan.getSuperclass().equals(Application.class)) {
++            Annotation applicationPath;
++            while ((applicationPath = JaxRsAnnotationUtils.getAnnotation(applicationToScan, "ApplicationPath")) == null && !JaxRsAnnotationUtils.isApplicationSuperclass(applicationToScan.getSuperclass())) {
+                 applicationToScan = applicationToScan.getSuperclass();
+             }
+ 
+             if (applicationPath != null) {
+-                if (StringUtils.isNotBlank(applicationPath.value())) {
+-                    return applicationPath.value();
++                String pathValue = JaxRsAnnotationUtils.getAnnotationValue(applicationPath);
++                if (StringUtils.isNotBlank(pathValue)) {
++                    return pathValue;
+                 }
+             }
+-            // look for inner application, e.g. ResourceConfig
+             try {
+-                Application innerApp = application;
++                Object innerApp = application;
+                 Method m = application.getClass().getMethod("getApplication");
+                 while (m != null) {
+-                    Application retrievedApp = (Application) m.invoke(innerApp);
++                    Object retrievedApp = m.invoke(innerApp);
+                     if (retrievedApp == null) {
+                         break;
+                     }
+@@ -259,10 +255,11 @@ public class Reader implements OpenApiReader {
+                         break;
+                     }
+                     innerApp = retrievedApp;
+-                    applicationPath = innerApp.getClass().getAnnotation(ApplicationPath.class);
++                    applicationPath = JaxRsAnnotationUtils.getAnnotation(innerApp.getClass(), "ApplicationPath");
+                     if (applicationPath != null) {
+-                        if (StringUtils.isNotBlank(applicationPath.value())) {
+-                            return applicationPath.value();
++                        String pathValue = JaxRsAnnotationUtils.getAnnotationValue(applicationPath);
++                        if (StringUtils.isNotBlank(pathValue)) {
++                            return pathValue;
+                         }
+                     }
+                     m = innerApp.getClass().getMethod("getApplication");
+@@ -286,7 +283,7 @@ public class Reader implements OpenApiReader {
+ 
+         Hidden hidden = cls.getAnnotation(Hidden.class);
+         // class path
+-        final javax.ws.rs.Path apiPath = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Path.class);
++        final Annotation apiPath = JaxRsAnnotationUtils.getAnnotation(cls, "Path");
+         final boolean openapi31 = Boolean.TRUE.equals(config.isOpenAPI31());
+ 
+         if (
+@@ -314,8 +311,8 @@ public class Reader implements OpenApiReader {
+         io.swagger.v3.oas.annotations.tags.Tag[] apiTags = ReflectionUtils.getRepeatableAnnotationsArray(cls, io.swagger.v3.oas.annotations.tags.Tag.class);
+         io.swagger.v3.oas.annotations.servers.Server[] apiServers = ReflectionUtils.getRepeatableAnnotationsArray(cls, io.swagger.v3.oas.annotations.servers.Server.class);
+ 
+-        javax.ws.rs.Consumes classConsumes = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Consumes.class);
+-        javax.ws.rs.Produces classProduces = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Produces.class);
++        Annotation classConsumes = JaxRsAnnotationUtils.getAnnotation(cls, "Consumes");
++        Annotation classProduces = JaxRsAnnotationUtils.getAnnotation(cls, "Produces");
+ 
+         boolean classDeprecated = ReflectionUtils.getAnnotation(cls, Deprecated.class) != null
+                 || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(cls, KotlinDetector.getKotlinDeprecated()) != null);
+@@ -440,8 +437,8 @@ public class Reader implements OpenApiReader {
+                 continue;
+             }
+             AnnotatedMethod annotatedMethod = bd.findMethod(method.getName(), method.getParameterTypes());
+-            javax.ws.rs.Produces methodProduces = ReflectionUtils.getAnnotation(method, javax.ws.rs.Produces.class);
+-            javax.ws.rs.Consumes methodConsumes = ReflectionUtils.getAnnotation(method, javax.ws.rs.Consumes.class);
++            Annotation methodProduces = JaxRsAnnotationUtils.getAnnotation(method, "Produces");
++            Annotation methodConsumes = JaxRsAnnotationUtils.getAnnotation(method, "Consumes");
+ 
+             if (isMethodOverridden(method, cls)) {
+                 continue;
+@@ -450,7 +447,7 @@ public class Reader implements OpenApiReader {
+             boolean methodDeprecated = ReflectionUtils.getAnnotation(method, Deprecated.class) != null
+                     || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(method, KotlinDetector.getKotlinDeprecated()) != null);
+ 
+-            javax.ws.rs.Path methodPath = ReflectionUtils.getAnnotation(method, javax.ws.rs.Path.class);
++            Annotation methodPath = JaxRsAnnotationUtils.getAnnotation(method, "Path");
+ 
+             String operationPath = ReaderUtils.getPath(apiPath, methodPath, parentPath, isSubresource);
+ 
+@@ -748,16 +745,16 @@ public class Reader implements OpenApiReader {
+                 .filter(p -> "string".equals(p.getSchema().getType()) || (p.getSchema().getTypes() != null && p.getSchema().getTypes().contains("string")))
+                 .forEach(p -> p.getSchema().setPattern(patternsMap.get(p.getName())));
+     }
+-    protected Content processContent(Content content, Schema<?> schema, Consumes methodConsumes, Consumes classConsumes) {
++    protected Content processContent(Content content, Schema<?> schema, Annotation methodConsumes, Annotation classConsumes) {
+         if (content == null) {
+             content = new Content();
+         }
+         if (methodConsumes != null) {
+-            for (String value : methodConsumes.value()) {
++            for (String value : JaxRsAnnotationUtils.getAnnotationValues(methodConsumes)) {
+                 setMediaTypeToContent(schema, content, value);
+             }
+         } else if (classConsumes != null) {
+-            for (String value : classConsumes.value()) {
++            for (String value : JaxRsAnnotationUtils.getAnnotationValues(classConsumes)) {
+                 setMediaTypeToContent(schema, content, value);
+             }
+         } else {
+@@ -767,7 +764,7 @@ public class Reader implements OpenApiReader {
+     }
+ 
+     protected void processRequestBody(Parameter requestBodyParameter, Operation operation,
+-                                      Consumes methodConsumes, Consumes classConsumes,
++                                      Annotation methodConsumes, Annotation classConsumes,
+                                       List<Parameter> operationParameters,
+                                       Annotation[] paramAnnotations, Type type,
+                                       JsonView jsonViewAnnotation,
+@@ -857,8 +854,8 @@ public class Reader implements OpenApiReader {
+                 encoding != null && !encoding.isEmpty()) {
+             Content content = operation.getRequestBody().getContent();
+             for (String mediaKey: content.keySet()) {
+-                if (mediaKey.equals(javax.ws.rs.core.MediaType.APPLICATION_FORM_URLENCODED) ||
+-                        mediaKey.equals(javax.ws.rs.core.MediaType.MULTIPART_FORM_DATA)) {
++                if (mediaKey.equals(JaxRsAnnotationUtils.getMediaTypeApplicationFormUrlencoded()) ||
++                        mediaKey.equals(JaxRsAnnotationUtils.getMediaTypeMultipartFormData())) {
+                     MediaType m = content.get(mediaKey);
+                     m.encoding(encoding);
+                 }
+@@ -912,47 +909,10 @@ public class Reader implements OpenApiReader {
+     public Operation parseMethod(
+             Method method,
+             List<Parameter> globalParameters,
+-            Produces methodProduces,
+-            Produces classProduces,
+-            Consumes methodConsumes,
+-            Consumes classConsumes,
+-            List<SecurityRequirement> classSecurityRequirements,
+-            Optional<io.swagger.v3.oas.models.ExternalDocumentation> classExternalDocs,
+-            Set<String> classTags,
+-            List<io.swagger.v3.oas.models.servers.Server> classServers,
+-            boolean isSubresource,
+-            RequestBody parentRequestBody,
+-            ApiResponses parentResponses,
+-            JsonView jsonViewAnnotation,
+-            io.swagger.v3.oas.annotations.responses.ApiResponse[] classResponses) {
+-        JavaType classType = TypeFactory.defaultInstance().constructType(method.getDeclaringClass());
+-        return parseMethod(
+-                classType.getClass(),
+-                method,
+-                globalParameters,
+-                methodProduces,
+-                classProduces,
+-                methodConsumes,
+-                classConsumes,
+-                classSecurityRequirements,
+-                classExternalDocs,
+-                classTags,
+-                classServers,
+-                isSubresource,
+-                parentRequestBody,
+-                parentResponses,
+-                jsonViewAnnotation,
+-                classResponses,
+-                null);
+-    }
+-
+-    public Operation parseMethod(
+-            Method method,
+-            List<Parameter> globalParameters,
+-            Produces methodProduces,
+-            Produces classProduces,
+-            Consumes methodConsumes,
+-            Consumes classConsumes,
++            Annotation methodProduces,
++            Annotation classProduces,
++            Annotation methodConsumes,
++            Annotation classConsumes,
+             List<SecurityRequirement> classSecurityRequirements,
+             Optional<io.swagger.v3.oas.models.ExternalDocumentation> classExternalDocs,
+             Set<String> classTags,
+@@ -988,10 +948,10 @@ public class Reader implements OpenApiReader {
+             Class<?> cls,
+             Method method,
+             List<Parameter> globalParameters,
+-            Produces methodProduces,
+-            Produces classProduces,
+-            Consumes methodConsumes,
+-            Consumes classConsumes,
++            Annotation methodProduces,
++            Annotation classProduces,
++            Annotation methodConsumes,
++            Annotation classConsumes,
+             List<SecurityRequirement> classSecurityRequirements,
+             Optional<io.swagger.v3.oas.models.ExternalDocumentation> classExternalDocs,
+             Set<String> classTags,
+@@ -1181,8 +1141,8 @@ public class Reader implements OpenApiReader {
+                 returnTypeSchema = resolvedSchema.schema;
+                 Content content = new Content();
+                 MediaType mediaType = new MediaType().schema(returnTypeSchema);
+-                AnnotationsUtils.applyTypes(classProduces == null ? new String[0] : classProduces.value(),
+-                        methodProduces == null ? new String[0] : methodProduces.value(), content, mediaType);
++                AnnotationsUtils.applyTypes(classProduces == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classProduces),
++                        methodProduces == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodProduces), content, mediaType);
+                 if (operation.getResponses() == null) {
+                     operation.responses(
+                             new ApiResponses().addApiResponse(defaultResponseKey,
+@@ -1248,11 +1208,11 @@ public class Reader implements OpenApiReader {
+         return annotatedMethod.getType();
+     }
+ 
+-    protected Content resolveEmptyContent(Produces classProduces, Produces methodProduces) {
++    protected Content resolveEmptyContent(Annotation classProduces, Annotation methodProduces) {
+         Content content = new Content();
+         MediaType mediaType = new MediaType();
+-        AnnotationsUtils.applyTypes(classProduces == null ? new String[0] : classProduces.value(),
+-                methodProduces == null ? new String[0] : methodProduces.value(), content, mediaType);
++        AnnotationsUtils.applyTypes(classProduces == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classProduces),
++                methodProduces == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodProduces), content, mediaType);
+         return content;
+     }
+ 
+@@ -1278,7 +1238,7 @@ public class Reader implements OpenApiReader {
+             Operation operation,
+             io.swagger.v3.oas.annotations.responses.ApiResponse[] responses,
+             Schema<?> schema,
+-            Produces classProduces, Produces methodProduces) {
++            Annotation classProduces, Annotation methodProduces) {
+         if (responses != null) {
+             for (io.swagger.v3.oas.annotations.responses.ApiResponse response: responses) {
+                 Map<String, MediaType> reresolvedMediaTypes = new LinkedHashMap<>();
+@@ -1327,7 +1287,7 @@ public class Reader implements OpenApiReader {
+             rawClassName = className.replace("[simple type, class ", "");
+             rawClassName = rawClassName.substring(0, rawClassName.length() -1);
+         }
+-        ignore = rawClassName.startsWith("javax.ws.rs.");
++        ignore = JaxRsAnnotationUtils.isJaxRsClass(rawClassName);
+         ignore = ignore || rawClassName.equalsIgnoreCase("void");
+         ignore = ignore || ModelConverters.getInstance(config.toConfiguration()).isRegisteredAsSkippedClass(rawClassName);
+         return ignore;
+@@ -1335,10 +1295,10 @@ public class Reader implements OpenApiReader {
+ 
+     private Map<String, Callback> getCallbacks(
+             io.swagger.v3.oas.annotations.callbacks.Callback apiCallback,
+-            Produces methodProduces,
+-            Produces classProduces,
+-            Consumes methodConsumes,
+-            Consumes classConsumes,
++            Annotation methodProduces,
++            Annotation classProduces,
++            Annotation methodConsumes,
++            Annotation classConsumes,
+             JsonView jsonViewAnnotation) {
+         Map<String, Callback> callbackMap = new HashMap<>();
+         if (apiCallback == null) {
+@@ -1406,10 +1366,10 @@ public class Reader implements OpenApiReader {
+     protected void setOperationObjectFromApiOperationAnnotation(
+             Operation operation,
+             io.swagger.v3.oas.annotations.Operation apiOperation,
+-            Produces methodProduces,
+-            Produces classProduces,
+-            Consumes methodConsumes,
+-            Consumes classConsumes,
++            Annotation methodProduces,
++            Annotation classProduces,
++            Annotation methodConsumes,
++            Annotation classConsumes,
+             JsonView jsonViewAnnotation) {
+         if (StringUtils.isNotBlank(apiOperation.summary())) {
+             operation.setSummary(apiOperation.summary());
+@@ -1508,7 +1468,7 @@ public class Reader implements OpenApiReader {
+         return false;
+     }
+ 
+-    protected Optional<List<Parameter>> getParametersListFromAnnotation(io.swagger.v3.oas.annotations.Parameter[] parameters, Consumes classConsumes, Consumes methodConsumes, Operation operation, JsonView jsonViewAnnotation) {
++    protected Optional<List<Parameter>> getParametersListFromAnnotation(io.swagger.v3.oas.annotations.Parameter[] parameters, Annotation classConsumes, Annotation methodConsumes, Operation operation, JsonView jsonViewAnnotation) {
+         if (parameters == null) {
+             return Optional.empty();
+         }
+@@ -1524,8 +1484,8 @@ public class Reader implements OpenApiReader {
+         return Optional.of(parametersObject);
+     }
+ 
+-    protected ResolvedParameter getParameters(Type type, List<Annotation> annotations, Operation operation, javax.ws.rs.Consumes classConsumes,
+-                                              javax.ws.rs.Consumes methodConsumes, JsonView jsonViewAnnotation) {
++    protected ResolvedParameter getParameters(Type type, List<Annotation> annotations, Operation operation, Annotation classConsumes,
++                                              Annotation methodConsumes, JsonView jsonViewAnnotation) {
+         final Iterator<OpenAPIExtension> chain = OpenAPIExtensions.chain();
+         if (!chain.hasNext()) {
+             return new ResolvedParameter();
+@@ -1628,7 +1588,7 @@ public class Reader implements OpenApiReader {
+         return ReflectionUtils.isOverriddenMethod(method, cls);
+     }
+ 
+-    public void setApplication(Application application) {
++    public void setApplication(Object application) {
+         this.application = application;
+     }
+ 
+@@ -1680,7 +1640,7 @@ public class Reader implements OpenApiReader {
+             type = rawType;
+         }
+ 
+-        if (method.getAnnotation(javax.ws.rs.Path.class) != null) {
++        if (JaxRsAnnotationUtils.hasAnnotation(method, "Path")) {
+             if (ReaderUtils.extractOperationMethod(method, null) == null) {
+                 return type;
+             }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/AbstractOpenAPIExtension.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/AbstractOpenAPIExtension.java
+index a645766c3..9baffb4a5 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/AbstractOpenAPIExtension.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/AbstractOpenAPIExtension.java
+@@ -33,8 +33,8 @@ public abstract class AbstractOpenAPIExtension implements OpenAPIExtension {
+ 
+     @Override
+     public ResolvedParameter extractParameters(List<Annotation> annotations, Type type, Set<Type> typesToSkip,
+-                                               Components components, javax.ws.rs.Consumes classConsumes,
+-                                               javax.ws.rs.Consumes methodConsumes, boolean includeRequestBody, JsonView jsonViewAnnotation, Iterator<OpenAPIExtension> chain) {
++                                               Components components, Annotation classConsumes,
++                                               Annotation methodConsumes, boolean includeRequestBody, JsonView jsonViewAnnotation, Iterator<OpenAPIExtension> chain) {
+         if (chain.hasNext()) {
+             return chain.next().extractParameters(annotations, type, typesToSkip, components, classConsumes, methodConsumes, includeRequestBody, jsonViewAnnotation, chain);
+         } else {
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/OpenAPIExtension.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/OpenAPIExtension.java
+index 7d23bba88..0385bc572 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/OpenAPIExtension.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/ext/OpenAPIExtension.java
+@@ -19,7 +19,7 @@ public interface OpenAPIExtension {
+     String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain);
+ 
+     ResolvedParameter extractParameters(List<Annotation> annotations, Type type, Set<Type> typesToSkip, Components components,
+-                                        javax.ws.rs.Consumes classConsumes, javax.ws.rs.Consumes methodConsumes, boolean includeRequestBody, JsonView jsonViewAnnotation, Iterator<OpenAPIExtension> chain);
++                                        Annotation classConsumes, Annotation methodConsumes, boolean includeRequestBody, JsonView jsonViewAnnotation, Iterator<OpenAPIExtension> chain);
+ 
+     /**
+      * Decorates operation with additional vendor based extensions.
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
+index 155ec649a..336216464 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
+@@ -2,6 +2,7 @@ package io.swagger.v3.jaxrs2.integration;
+ 
+ import io.github.classgraph.ClassGraph;
+ import io.github.classgraph.ScanResult;
++import io.swagger.v3.core.util.JaxRsAnnotationUtils;
+ import io.swagger.v3.jaxrs2.integration.api.JaxrsOpenApiScanner;
+ import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+ import io.swagger.v3.oas.annotations.Webhooks;
+@@ -12,8 +13,6 @@ import org.apache.commons.lang3.StringUtils;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.ws.rs.ApplicationPath;
+-import javax.ws.rs.core.Application;
+ import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.Map;
+@@ -28,17 +27,17 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
+     }
+ 
+     protected OpenAPIConfiguration openApiConfiguration;
+-    protected Application application;
++    protected Object application;
+     protected static final Logger LOGGER = LoggerFactory.getLogger(JaxrsAnnotationScanner.class);
+     protected boolean onlyConsiderResourcePackages = false;
+ 
+-    public JaxrsAnnotationScanner application(Application application) {
++    public JaxrsAnnotationScanner application(Object application) {
+         this.application = application;
+         return this;
+     }
+ 
+     @Override
+-    public void setApplication(Application application) {
++    public void setApplication(Object application) {
+         this.application = application;
+     }
+ 
+@@ -63,7 +62,6 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
+         Set<String> acceptablePackages = new HashSet<>();
+         Set<Class<?>> output = new HashSet<>();
+ 
+-        // if classes are passed, use them
+         if (openApiConfiguration.getResourceClasses() != null && !openApiConfiguration.getResourceClasses().isEmpty()) {
+             for (String className : openApiConfiguration.getResourceClasses()) {
+                 if (!isIgnored(className)) {
+@@ -92,11 +90,13 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
+         }
+         final Set<Class<?>> classes;
+         try (ScanResult scanResult = graph.scan()) {
+-            classes = new HashSet<>(scanResult.getClassesWithAnnotation(javax.ws.rs.Path.class.getName()).loadClasses());
++            classes = new HashSet<>(scanResult.getClassesWithAnnotation("javax.ws.rs.Path").loadClasses());
++            classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("jakarta.ws.rs.Path").loadClasses()));
+             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(OpenAPIDefinition.class.getName()).loadClasses()));
+             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(Webhooks.class.getName()).loadClasses()));
+             if (Boolean.TRUE.equals(openApiConfiguration.isAlwaysResolveAppPath())) {
+-                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(ApplicationPath.class.getName()).loadClasses()));
++                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("javax.ws.rs.ApplicationPath").loadClasses()));
++                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("jakarta.ws.rs.ApplicationPath").loadClasses()));
+             }
+         }
+ 
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContext.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContext.java
+index c051ffd20..969aa0e92 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContext.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContext.java
+@@ -11,14 +11,12 @@ import org.apache.commons.lang3.StringUtils;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+-import javax.ws.rs.core.Application;
+-
+ public class JaxrsOpenApiContext<T extends JaxrsOpenApiContext> extends GenericOpenApiContext<JaxrsOpenApiContext> implements OpenApiContext {
+     Logger LOGGER = LoggerFactory.getLogger(JaxrsOpenApiContext.class);
+ 
+-    private Application app;
++    private Object app;
+ 
+-    public T app(Application app) {
++    public T app(Object app) {
+         this.app = app;
+         return (T) this;
+     }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContextBuilder.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContextBuilder.java
+index be873bfbb..bd9cc63b5 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContextBuilder.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsOpenApiContextBuilder.java
+@@ -7,11 +7,10 @@ import io.swagger.v3.oas.integration.api.OpenApiContext;
+ import org.apache.commons.lang3.StringUtils;
+ 
+ import javax.servlet.ServletConfig;
+-import javax.ws.rs.core.Application;
+ 
+ public class JaxrsOpenApiContextBuilder<T extends JaxrsOpenApiContextBuilder> extends GenericOpenApiContextBuilder<JaxrsOpenApiContextBuilder> {
+ 
+-    protected Application application;
++    protected Object application;
+     protected ServletConfig servletConfig;
+ 
+     @Override
+@@ -47,11 +46,11 @@ public class JaxrsOpenApiContextBuilder<T extends JaxrsOpenApiContextBuilder> ex
+         return ctx;
+     }
+ 
+-    public Application getApplication() {
++    public Object getApplication() {
+         return application;
+     }
+ 
+-    public void setApplication(Application application) {
++    public void setApplication(Object application) {
+         this.application = application;
+     }
+ 
+@@ -63,7 +62,7 @@ public class JaxrsOpenApiContextBuilder<T extends JaxrsOpenApiContextBuilder> ex
+         this.servletConfig = servletConfig;
+     }
+ 
+-    public T application(Application application) {
++    public T application(Object application) {
+         this.application = application;
+         return (T) this;
+     }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/api/JaxrsOpenApiScanner.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/api/JaxrsOpenApiScanner.java
+index a3e79298b..abaf913ca 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/api/JaxrsOpenApiScanner.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/api/JaxrsOpenApiScanner.java
+@@ -2,9 +2,7 @@ package io.swagger.v3.jaxrs2.integration.api;
+ 
+ import io.swagger.v3.oas.integration.api.OpenApiScanner;
+ 
+-import javax.ws.rs.core.Application;
+-
+ public interface JaxrsOpenApiScanner extends OpenApiScanner {
+ 
+-    void setApplication(Application application);
++    void setApplication(Object application);
+ }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+index e3bb41d9d..eb79adf21 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+@@ -1,6 +1,7 @@
+ package io.swagger.v3.jaxrs2.util;
+ 
+ import com.fasterxml.jackson.annotation.JsonView;
++import io.swagger.v3.core.util.JaxRsAnnotationUtils;
+ import io.swagger.v3.core.util.ParameterProcessor;
+ import io.swagger.v3.core.util.ReflectionUtils;
+ import io.swagger.v3.jaxrs2.ext.OpenAPIExtension;
+@@ -11,8 +12,6 @@ import io.swagger.v3.oas.models.media.Schema;
+ import io.swagger.v3.oas.models.parameters.Parameter;
+ import org.apache.commons.lang3.StringUtils;
+ 
+-import javax.ws.rs.HttpMethod;
+-import javax.ws.rs.core.Context;
+ import java.lang.annotation.Annotation;
+ import java.lang.reflect.Constructor;
+ import java.lang.reflect.Field;
+@@ -36,21 +35,14 @@ public class ReaderUtils {
+     private static final String OPTIONS_METHOD = "options";
+     private static final String PATH_DELIMITER = "/";
+ 
+-    public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
++    public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, Annotation classConsumes, JsonView jsonViewAnnotation) {
+         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, null);
+     }
+ 
+-    public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation, Schema.SchemaResolution schemaResolution) {
++    public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, Annotation classConsumes, JsonView jsonViewAnnotation, Schema.SchemaResolution schemaResolution) {
+         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, schemaResolution, false);
+     }
+-    /**
+-     * Collects constructor-level parameters from class.
+-     *
+-     * @param cls        is a class for collecting
+-     * @param components
+-     * @return the collection of supported parameters
+-     */
+-    public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation, Schema.SchemaResolution schemaResolution, boolean openapi31) {
++    public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, Annotation classConsumes, JsonView jsonViewAnnotation, Schema.SchemaResolution schemaResolution, boolean openapi31) {
+         if (cls.isLocalClass() || (cls.isMemberClass() && !Modifier.isStatic(cls.getModifiers()))) {
+             return Collections.emptyList();
+         }
+@@ -83,7 +75,7 @@ public class ReaderUtils {
+                                     genericParameterType,
+                                     tmpAnnotations,
+                                     components,
+-                                    classConsumes == null ? new String[0] : classConsumes.value(),
++                                    classConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classConsumes),
+                                     null,
+                                     jsonViewAnnotation,
+                                     openapi31,
+@@ -113,7 +105,7 @@ public class ReaderUtils {
+      * @param components
+      * @return the collection of supported parameters
+      */
+-    public static List<Parameter> collectFieldParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
++    public static List<Parameter> collectFieldParameters(Class<?> cls, Components components, Annotation classConsumes, JsonView jsonViewAnnotation) {
+         final List<Parameter> parameters = new ArrayList<>();
+         for (Field field : ReflectionUtils.getDeclaredFields(cls)) {
+             final List<Annotation> annotations = Arrays.asList(field.getAnnotations());
+@@ -123,7 +115,7 @@ public class ReaderUtils {
+         return parameters;
+     }
+ 
+-    private static List<Parameter> collectParameters(Type type, List<Annotation> annotations, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
++    private static List<Parameter> collectParameters(Type type, List<Annotation> annotations, Components components, Annotation classConsumes, JsonView jsonViewAnnotation) {
+         final Iterator<OpenAPIExtension> chain = OpenAPIExtensions.chain();
+         return chain.hasNext() ? chain.next().extractParameters(annotations, type, new HashSet<>(), components, classConsumes, null, false, jsonViewAnnotation, chain).parameters :
+                 Collections.emptyList();
+@@ -131,7 +123,7 @@ public class ReaderUtils {
+ 
+     private static boolean isContext(List<Annotation> annotations) {
+         for (Annotation annotation : annotations) {
+-            if (annotation instanceof Context) {
++            if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "Context", "core")) {
+                 return true;
+             }
+         }
+@@ -169,17 +161,17 @@ public class ReaderUtils {
+         return false;
+     }
+ 
+-    public static String getPath(javax.ws.rs.Path classLevelPath, javax.ws.rs.Path methodLevelPath, String parentPath, boolean isSubresource) {
++    public static String getPath(Annotation classLevelPath, Annotation methodLevelPath, String parentPath, boolean isSubresource) {
+         if (classLevelPath == null && methodLevelPath == null && StringUtils.isEmpty(parentPath)) {
+             return null;
+         }
+         StringBuilder b = new StringBuilder();
+         appendPathComponent(parentPath, b);
+         if (classLevelPath != null && !isSubresource) {
+-            appendPathComponent(classLevelPath.value(), b);
++            appendPathComponent(JaxRsAnnotationUtils.getAnnotationValue(classLevelPath), b);
+         }
+         if (methodLevelPath != null) {
+-            appendPathComponent(methodLevelPath.value(), b);
++            appendPathComponent(JaxRsAnnotationUtils.getAnnotationValue(methodLevelPath), b);
+         }
+         return b.length() == 0 ? "/" : b.toString();
+     }
+@@ -209,22 +201,15 @@ public class ReaderUtils {
+     }
+ 
+     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
+-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
+-            return GET_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
+-            return PUT_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
+-            return POST_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
+-            return DELETE_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
+-            return OPTIONS_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
+-            return HEAD_METHOD;
+-        } else if (method.getAnnotation(HttpMethod.class) != null) {
+-            HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
+-            return httpMethod.value().toLowerCase();
+-        } else if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
++        String httpMethod = JaxRsAnnotationUtils.extractHttpMethod(method);
++        if (httpMethod != null) {
++            return httpMethod;
++        }
++        Annotation httpMethodAnnotation = JaxRsAnnotationUtils.getAnnotation(method, "HttpMethod");
++        if (httpMethodAnnotation != null) {
++            return JaxRsAnnotationUtils.getAnnotationValue(httpMethodAnnotation).toLowerCase();
++        }
++        if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
+             return getHttpMethodFromCustomAnnotations(method);
+         } else if ((ReflectionUtils.getOverriddenMethod(method)) != null) {
+             return extractOperationMethod(ReflectionUtils.getOverriddenMethod(method), chain);
+@@ -237,9 +222,9 @@ public class ReaderUtils {
+ 
+     public static String getHttpMethodFromCustomAnnotations(Method method) {
+         for (Annotation methodAnnotation : method.getAnnotations()) {
+-            HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
+-            if (httpMethod != null) {
+-                return httpMethod.value().toLowerCase();
++            Annotation httpMethodMeta = JaxRsAnnotationUtils.getAnnotation(methodAnnotation.annotationType(), "HttpMethod");
++            if (httpMethodMeta != null) {
++                return JaxRsAnnotationUtils.getAnnotationValue(httpMethodMeta).toLowerCase();
+             }
+         }
+         return null;

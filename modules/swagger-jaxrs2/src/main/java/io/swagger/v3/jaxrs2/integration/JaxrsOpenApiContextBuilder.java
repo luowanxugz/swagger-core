@@ -7,11 +7,10 @@ import io.swagger.v3.oas.integration.api.OpenApiContext;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.servlet.ServletConfig;
-import javax.ws.rs.core.Application;
 
 public class JaxrsOpenApiContextBuilder<T extends JaxrsOpenApiContextBuilder> extends GenericOpenApiContextBuilder<JaxrsOpenApiContextBuilder> {
 
-    protected Application application;
+    protected Object application;
     protected ServletConfig servletConfig;
 
     @Override
@@ -47,11 +46,11 @@ public class JaxrsOpenApiContextBuilder<T extends JaxrsOpenApiContextBuilder> ex
         return ctx;
     }
 
-    public Application getApplication() {
+    public Object getApplication() {
         return application;
     }
 
-    public void setApplication(Application application) {
+    public void setApplication(Object application) {
         this.application = application;
     }
 
@@ -63,7 +62,7 @@ public class JaxrsOpenApiContextBuilder<T extends JaxrsOpenApiContextBuilder> ex
         this.servletConfig = servletConfig;
     }
 
-    public T application(Application application) {
+    public T application(Object application) {
         this.application = application;
         return (T) this;
     }

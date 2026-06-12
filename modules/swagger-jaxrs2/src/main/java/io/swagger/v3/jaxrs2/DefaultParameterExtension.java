@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.introspect.AnnotatedMethod;
 import com.fasterxml.jackson.databind.introspect.AnnotationMap;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 
+import io.swagger.v3.core.util.JaxRsAnnotationUtils;
 import io.swagger.v3.core.util.Json;
 import io.swagger.v3.core.util.ParameterProcessor;
 import io.swagger.v3.jaxrs2.ext.AbstractOpenAPIExtension;
@@ -18,12 +19,6 @@ import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import org.apache.commons.lang3.StringUtils;
 
-import javax.ws.rs.BeanParam;
-import javax.ws.rs.CookieParam;
-import javax.ws.rs.HeaderParam;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.MatrixParam;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -44,8 +39,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                                                Type type,
                                                Set<Type> typesToSkip,
                                                Components components,
-                                               javax.ws.rs.Consumes classConsumes,
-                                               javax.ws.rs.Consumes methodConsumes,
+                                               Annotation classConsumes,
+                                               Annotation methodConsumes,
                                                boolean includeRequestBody,
                                                JsonView jsonViewAnnotation,
                                                Iterator<OpenAPIExtension> chain) {
@@ -56,36 +51,31 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
 
         Parameter parameter = null;
         for (Annotation annotation : annotations) {
-            if (annotation instanceof QueryParam) {
-                QueryParam param = (QueryParam) annotation;
+            if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "QueryParam")) {
                 Parameter qp = new Parameter();
                 qp.setIn(QUERY_PARAM);
-                qp.setName(param.value());
+                qp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
                 parameter = qp;
-            } else if (annotation instanceof PathParam) {
-                PathParam param = (PathParam) annotation;
+            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "PathParam")) {
                 Parameter pp = new Parameter();
                 pp.setIn(PATH_PARAM);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
                 parameter = pp;
-            } else if (annotation instanceof MatrixParam) {
-                MatrixParam param = (MatrixParam) annotation;
+            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "MatrixParam")) {
                 Parameter pp = new Parameter();
                 pp.setIn(PATH_PARAM);
                 pp.setStyle(Parameter.StyleEnum.MATRIX);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
                 parameter = pp;
-            } else if (annotation instanceof HeaderParam) {
-                HeaderParam param = (HeaderParam) annotation;
+            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "HeaderParam")) {
                 Parameter pp = new Parameter();
                 pp.setIn(HEADER_PARAM);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
                 parameter = pp;
-            } else if (annotation instanceof CookieParam) {
-                CookieParam param = (CookieParam) annotation;
+            } else if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "CookieParam")) {
                 Parameter pp = new Parameter();
                 pp.setIn(COOKIE_PARAM);
-                pp.setName(param.value());
+                pp.setName(JaxRsAnnotationUtils.getAnnotationValue(annotation));
                 parameter = pp;
             } else if (annotation instanceof io.swagger.v3.oas.annotations.Parameter) {
                 if (((io.swagger.v3.oas.annotations.Parameter) annotation).hidden()) {
@@ -119,8 +109,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     type,
                     annotations,
                     components,
-                    classConsumes == null ? new String[0] : classConsumes.value(),
-                    methodConsumes == null ? new String[0] : methodConsumes.value(), jsonViewAnnotation, configuration);
+                    classConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classConsumes),
+                    methodConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodConsumes), jsonViewAnnotation, configuration);
             if (unknownParameter != null) {
                 if (StringUtils.isNotBlank(unknownParameter.getIn()) && !"form".equals(unknownParameter.getIn())) {
                     extractParametersResult.parameters.add(unknownParameter);
@@ -138,8 +128,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     type,
                     annotations,
                     components,
-                    classConsumes == null ? new String[0] : classConsumes.value(),
-                    methodConsumes == null ? new String[0] : methodConsumes.value(),
+                    classConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(classConsumes),
+                    methodConsumes == null ? new String[0] : JaxRsAnnotationUtils.getAnnotationValues(methodConsumes),
                     jsonViewAnnotation,
                     openapi31,
                     this.schemaResolution);
@@ -150,21 +140,11 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
         return extractParametersResult;
     }
 
-    /**
-     * Adds additional annotation processing support
-     *
-     * @param parameters
-     * @param annotation
-     * @param type
-     * @param typesToSkip
-     */
-
     private boolean handleAdditionalAnnotation(List<Parameter> parameters, List<Parameter> formParameters, Annotation annotation,
-                                               final Type type, Set<Type> typesToSkip, javax.ws.rs.Consumes classConsumes,
-                                               javax.ws.rs.Consumes methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
+                                               final Type type, Set<Type> typesToSkip, Annotation classConsumes,
+                                               Annotation methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
         boolean processed = false;
-        if (BeanParam.class.isAssignableFrom(annotation.getClass())) {
-            // Use Jackson's logic for processing Beans
+        if (JaxRsAnnotationUtils.isJaxRsAnnotation(annotation, "BeanParam")) {
             final BeanDescription beanDesc = mapper.getSerializationConfig().introspect(constructType(type));
             final List<BeanPropertyDefinition> properties = beanDesc.findProperties();
 
@@ -176,7 +156,6 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                 final Iterator<OpenAPIExtension> extensions = OpenAPIExtensions.chain();
                 Type paramType = null;
 
-                // Gather the field's details
                 if (field != null) {
                     paramType = field.getType();
                     AnnotationMap annotationMap = field.getAllAnnotations();
@@ -189,11 +168,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     }
                 }
 
-                // Gather the setter's details but only the ones we need
                 if (setter != null) {
-                    // Do not set the param class/type from the setter if the values are already identified
                     if (paramType == null) {
-                        // paramType will stay null if there is no parameter
                         paramType = setter.getParameterType(0);
                     }
                     AnnotationMap annotationMap = setter.getAllAnnotations();
@@ -206,9 +182,7 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     }
                 }
 
-                // Gather the getter's details but only the ones we need
                 if (getter != null) {
-                    // Do not set the param class/type from the getter if the values are already identified
                     if (paramType == null) {
                         paramType = getter.getType();
                     }
@@ -226,7 +200,6 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                     continue;
                 }
 
-                // skip hidden properties
                 boolean hidden  = false;
                 for (Annotation a : paramAnnotations) {
                     if (a instanceof io.swagger.v3.oas.annotations.media.Schema) {
@@ -242,7 +215,6 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                 if (hidden) {
                     continue;
                 }
-                // Re-process all Bean fields and let the default swagger-jaxrs/swagger-jersey-jaxrs processors do their thing
                 ResolvedParameter resolvedParameter = extensions.next().extractParameters(
                         paramAnnotations,
                         paramType,
@@ -280,7 +252,7 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
 
     @Override
     protected boolean shouldIgnoreClass(Class<?> cls) {
-        return cls.getName().startsWith("javax.ws.rs.");
+        return JaxRsAnnotationUtils.isJaxRsClass(cls.getName());
     }
 
 }
