@@ -11,7 +11,6 @@ import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import org.apache.commons.lang3.StringUtils;
 
-import javax.ws.rs.HttpMethod;
 import javax.ws.rs.core.Context;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
@@ -35,6 +34,24 @@ public class ReaderUtils {
     private static final String HEAD_METHOD = "head";
     private static final String OPTIONS_METHOD = "options";
     private static final String PATH_DELIMITER = "/";
+    private static final String JAVAX_WS_RS_PACKAGE = "javax.ws.rs.";
+    private static final String JAKARTA_WS_RS_PACKAGE = "jakarta.ws.rs.";
+    private static final String JAVAX_PATH = JAVAX_WS_RS_PACKAGE + "Path";
+    private static final String JAKARTA_PATH = JAKARTA_WS_RS_PACKAGE + "Path";
+    private static final String JAVAX_GET = JAVAX_WS_RS_PACKAGE + "GET";
+    private static final String JAKARTA_GET = JAKARTA_WS_RS_PACKAGE + "GET";
+    private static final String JAVAX_PUT = JAVAX_WS_RS_PACKAGE + "PUT";
+    private static final String JAKARTA_PUT = JAKARTA_WS_RS_PACKAGE + "PUT";
+    private static final String JAVAX_POST = JAVAX_WS_RS_PACKAGE + "POST";
+    private static final String JAKARTA_POST = JAKARTA_WS_RS_PACKAGE + "POST";
+    private static final String JAVAX_DELETE = JAVAX_WS_RS_PACKAGE + "DELETE";
+    private static final String JAKARTA_DELETE = JAKARTA_WS_RS_PACKAGE + "DELETE";
+    private static final String JAVAX_OPTIONS = JAVAX_WS_RS_PACKAGE + "OPTIONS";
+    private static final String JAKARTA_OPTIONS = JAKARTA_WS_RS_PACKAGE + "OPTIONS";
+    private static final String JAVAX_HEAD = JAVAX_WS_RS_PACKAGE + "HEAD";
+    private static final String JAKARTA_HEAD = JAKARTA_WS_RS_PACKAGE + "HEAD";
+    private static final String JAVAX_HTTP_METHOD = JAVAX_WS_RS_PACKAGE + "HttpMethod";
+    private static final String JAKARTA_HTTP_METHOD = JAKARTA_WS_RS_PACKAGE + "HttpMethod";
 
     public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, null);
@@ -169,19 +186,52 @@ public class ReaderUtils {
         return false;
     }
 
-    public static String getPath(javax.ws.rs.Path classLevelPath, javax.ws.rs.Path methodLevelPath, String parentPath, boolean isSubresource) {
+    public static String getPath(String classLevelPath, String methodLevelPath, String parentPath, boolean isSubresource) {
         if (classLevelPath == null && methodLevelPath == null && StringUtils.isEmpty(parentPath)) {
             return null;
         }
         StringBuilder b = new StringBuilder();
         appendPathComponent(parentPath, b);
         if (classLevelPath != null && !isSubresource) {
-            appendPathComponent(classLevelPath.value(), b);
+            appendPathComponent(classLevelPath, b);
         }
         if (methodLevelPath != null) {
-            appendPathComponent(methodLevelPath.value(), b);
+            appendPathComponent(methodLevelPath, b);
         }
         return b.length() == 0 ? "/" : b.toString();
+    }
+
+    public static String extractPath(Class<?> cls) {
+        String path = extractPathValue(cls.getAnnotations());
+        if (path != null) {
+            return path;
+        }
+        Class<?> superClass = cls.getSuperclass();
+        if (superClass != null && !Object.class.equals(superClass)) {
+            path = extractPath(superClass);
+            if (path != null) {
+                return path;
+            }
+        }
+        for (Class<?> anInterface : cls.getInterfaces()) {
+            path = extractPath(anInterface);
+            if (path != null) {
+                return path;
+            }
+        }
+        return null;
+    }
+
+    public static String extractPath(Method method) {
+        String path = extractPathValue(method.getAnnotations());
+        if (path != null) {
+            return path;
+        }
+        Method overriddenMethod = ReflectionUtils.getOverriddenMethod(method);
+        if (overriddenMethod != null) {
+            return extractPath(overriddenMethod);
+        }
+        return null;
     }
 
     /**
@@ -209,39 +259,93 @@ public class ReaderUtils {
     }
 
     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
+        if (hasAnnotation(method, JAVAX_GET, JAKARTA_GET)) {
             return GET_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_PUT, JAKARTA_PUT)) {
             return PUT_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_POST, JAKARTA_POST)) {
             return POST_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_DELETE, JAKARTA_DELETE)) {
             return DELETE_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_OPTIONS, JAKARTA_OPTIONS)) {
             return OPTIONS_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_HEAD, JAKARTA_HEAD)) {
             return HEAD_METHOD;
-        } else if (method.getAnnotation(HttpMethod.class) != null) {
-            HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
-            return httpMethod.value().toLowerCase();
-        } else if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
-            return getHttpMethodFromCustomAnnotations(method);
-        } else if ((ReflectionUtils.getOverriddenMethod(method)) != null) {
-            return extractOperationMethod(ReflectionUtils.getOverriddenMethod(method), chain);
-        } else if (chain != null && chain.hasNext()) {
-            return chain.next().extractOperationMethod(method, chain);
-        } else {
-            return null;
         }
+
+        String httpMethod = extractHttpMethodValue(method.getAnnotations());
+        if (StringUtils.isNotBlank(httpMethod)) {
+            return httpMethod.toLowerCase();
+        }
+
+        httpMethod = getHttpMethodFromCustomAnnotations(method);
+        if (StringUtils.isNotBlank(httpMethod)) {
+            return httpMethod;
+        }
+
+        Method overriddenMethod = ReflectionUtils.getOverriddenMethod(method);
+        if (overriddenMethod != null) {
+            return extractOperationMethod(overriddenMethod, chain);
+        }
+        if (chain != null && chain.hasNext()) {
+            return chain.next().extractOperationMethod(method, chain);
+        }
+        return null;
     }
 
     public static String getHttpMethodFromCustomAnnotations(Method method) {
         for (Annotation methodAnnotation : method.getAnnotations()) {
-            HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
-            if (httpMethod != null) {
-                return httpMethod.value().toLowerCase();
+            String httpMethod = extractHttpMethodValue(methodAnnotation.annotationType().getAnnotations());
+            if (StringUtils.isNotBlank(httpMethod)) {
+                return httpMethod.toLowerCase();
             }
         }
         return null;
+    }
+
+    private static String extractPathValue(Annotation[] annotations) {
+        for (Annotation annotation : annotations) {
+            if (isAnnotationNamed(annotation, JAVAX_PATH, JAKARTA_PATH)) {
+                return extractStringValue(annotation);
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasAnnotation(Method method, String... annotationTypeNames) {
+        for (Annotation annotation : method.getAnnotations()) {
+            if (isAnnotationNamed(annotation, annotationTypeNames)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAnnotationNamed(Annotation annotation, String... annotationTypeNames) {
+        String annotationTypeName = annotation.annotationType().getName();
+        for (String annotationType : annotationTypeNames) {
+            if (annotationType.equals(annotationTypeName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String extractHttpMethodValue(Annotation[] annotations) {
+        for (Annotation annotation : annotations) {
+            if (isAnnotationNamed(annotation, JAVAX_HTTP_METHOD, JAKARTA_HTTP_METHOD)) {
+                return extractStringValue(annotation);
+            }
+        }
+        return null;
+    }
+
+    private static String extractStringValue(Annotation annotation) {
+        try {
+            Object value = annotation.annotationType().getMethod("value").invoke(annotation);
+            return value instanceof String ? (String) value : null;
+        } catch (ReflectiveOperationException e) {
+            return null;
+        }
     }
 }

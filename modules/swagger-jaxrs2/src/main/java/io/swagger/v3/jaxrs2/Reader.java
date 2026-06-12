@@ -285,8 +285,7 @@ public class Reader implements OpenApiReader {
                         Set<Class<?>> scannedResources) {
 
         Hidden hidden = cls.getAnnotation(Hidden.class);
-        // class path
-        final javax.ws.rs.Path apiPath = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Path.class);
+        final String apiPath = ReaderUtils.extractPath(cls);
         final boolean openapi31 = Boolean.TRUE.equals(config.isOpenAPI31());
 
         if (
@@ -450,7 +449,7 @@ public class Reader implements OpenApiReader {
             boolean methodDeprecated = ReflectionUtils.getAnnotation(method, Deprecated.class) != null
                     || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(method, KotlinDetector.getKotlinDeprecated()) != null);
 
-            javax.ws.rs.Path methodPath = ReflectionUtils.getAnnotation(method, javax.ws.rs.Path.class);
+            String methodPath = ReaderUtils.extractPath(method);
 
             String operationPath = ReaderUtils.getPath(apiPath, methodPath, parentPath, isSubresource);
 
@@ -1680,7 +1679,7 @@ public class Reader implements OpenApiReader {
             type = rawType;
         }
 
-        if (method.getAnnotation(javax.ws.rs.Path.class) != null) {
+        if (ReaderUtils.extractPath(method) != null) {
             if (ReaderUtils.extractOperationMethod(method, null) == null) {
                 return type;
             }
