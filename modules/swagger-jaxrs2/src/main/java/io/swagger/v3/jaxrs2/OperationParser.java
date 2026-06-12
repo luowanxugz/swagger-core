@@ -7,10 +7,10 @@ import io.swagger.v3.oas.models.links.Link;
 import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.jaxrs2.util.JaxRsAnnotationLoader;
 import org.apache.commons.lang3.StringUtils;
 
-import javax.ws.rs.Consumes;
-import javax.ws.rs.Produces;
+import java.lang.annotation.Annotation;
 import java.util.Map;
 import java.util.Optional;
 
@@ -18,10 +18,10 @@ public class OperationParser {
 
     public static final String COMPONENTS_REF = Components.COMPONENTS_SCHEMAS_REF;
 
-    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Consumes classConsumes, Consumes methodConsumes, Components components, JsonView jsonViewAnnotation) {
+    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Annotation classConsumes, Annotation methodConsumes, Components components, JsonView jsonViewAnnotation) {
         return getRequestBody(requestBody, classConsumes, methodConsumes, components, jsonViewAnnotation, false);
     }
-    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Consumes classConsumes, Consumes methodConsumes, Components components, JsonView jsonViewAnnotation, boolean openapi31) {
+    public static Optional<RequestBody> getRequestBody(io.swagger.v3.oas.annotations.parameters.RequestBody requestBody, Annotation classConsumes, Annotation methodConsumes, Components components, JsonView jsonViewAnnotation, boolean openapi31) {
         if (requestBody == null) {
             return Optional.empty();
         }
@@ -65,7 +65,7 @@ public class OperationParser {
         return getApiResponses(responses, classProduces, methodProduces, components, jsonViewAnnotation, false, ApiResponses.DEFAULT);
     }
 
-    public static Optional<ApiResponses> getApiResponses(final io.swagger.v3.oas.annotations.responses.ApiResponse[] responses, Produces classProduces, Produces methodProduces, Components components, JsonView jsonViewAnnotation, boolean openapi31, String defaultResponseKey) {
+    public static Optional<ApiResponses> getApiResponses(final io.swagger.v3.oas.annotations.responses.ApiResponse[] responses, Annotation classProduces, Annotation methodProduces, Components components, JsonView jsonViewAnnotation, boolean openapi31, String defaultResponseKey) {
         if (responses == null) {
             return Optional.empty();
         }
