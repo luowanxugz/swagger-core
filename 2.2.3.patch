@@ -1,0 +1,32 @@
+--- a/PathAnnotationProcessor.java
++++ b/PathAnnotationProcessor.java
+@@ -1,9 +1,24 @@
++import java.lang.reflect.Method;
++import java.lang.annotation.Annotation;
++
+ public class PathAnnotationProcessor { 
++    @SuppressWarnings("unchecked")
+     public void process(Class<?> clazz) { 
+         for (Method method : clazz.getDeclaredMethods()) { 
+-            if (method.isAnnotationPresent(javax.ws.rs.GET.class)) { 
+-                // 仅处理javax包注解 
+-            } 
++            // 动态加载双命名空间注解类 
++            Class<? extends Annotation> getAnnotation = (Class<? extends Annotation>) loadAnnotation("javax.ws.rs.GET"); 
++            Class<? extends Annotation> jakartaGetAnnotation = (Class<? extends Annotation>) loadAnnotation("jakarta.ws.rs.GET"); 
++            
++            if ((getAnnotation != null && method.isAnnotationPresent(getAnnotation)) || 
++                (jakartaGetAnnotation != null && method.isAnnotationPresent(jakartaGetAnnotation))) { 
++                // 统一处理逻辑 
++            } 
+         } 
+     } 
++    
++    private Class<?> loadAnnotation(String className) { 
++        try { 
++            return Class.forName(className); 
++        } catch (ClassNotFoundException e) { 
++            return null; // 兼容旧环境 
++        } 
++    } 
+ }
