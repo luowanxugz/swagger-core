@@ -1,0 +1,71 @@
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+index e3bb41d9d..a4b1ef9ed 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+@@ -11,7 +11,6 @@ import io.swagger.v3.oas.models.media.Schema;
+ import io.swagger.v3.oas.models.parameters.Parameter;
+ import org.apache.commons.lang3.StringUtils;
+ 
+-import javax.ws.rs.HttpMethod;
+ import javax.ws.rs.core.Context;
+ import java.lang.annotation.Annotation;
+ import java.lang.reflect.Constructor;
+@@ -209,22 +208,21 @@ public class ReaderUtils {
+     }
+ 
+     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
+-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
+-            return GET_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
+-            return PUT_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
+-            return POST_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
+-            return DELETE_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
+-            return OPTIONS_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
+-            return HEAD_METHOD;
+-        } else if (method.getAnnotation(HttpMethod.class) != null) {
+-            HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
+-            return httpMethod.value().toLowerCase();
+-        } else if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
++        String operationMethod = JaxRsAnnotationLoader.getOperationMethod(method);
++        if (operationMethod != null) {
++            return operationMethod;
++        }
++        if (JaxRsAnnotationLoader.isAnnotationPresent(method, "HttpMethod")) {
++            Annotation httpMethodAnnotation = JaxRsAnnotationLoader.getAnnotation(method, "HttpMethod");
++            if (httpMethodAnnotation != null) {
++                try {
++                    Method valueMethod = httpMethodAnnotation.annotationType().getMethod("value");
++                    return ((String) valueMethod.invoke(httpMethodAnnotation)).toLowerCase();
++                } catch (Exception e) {
++                }
++            }
++        }
++        if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
+             return getHttpMethodFromCustomAnnotations(method);
+         } else if ((ReflectionUtils.getOverriddenMethod(method)) != null) {
+             return extractOperationMethod(ReflectionUtils.getOverriddenMethod(method), chain);
+@@ -236,10 +234,18 @@ public class ReaderUtils {
+     }
+ 
+     public static String getHttpMethodFromCustomAnnotations(Method method) {
++        Class<? extends Annotation> httpMethodClass = JaxRsAnnotationLoader.getHttpMethodClass();
++        if (httpMethodClass == null) {
++            return null;
++        }
+         for (Annotation methodAnnotation : method.getAnnotations()) {
+-            HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
++            Annotation httpMethod = methodAnnotation.annotationType().getAnnotation(httpMethodClass);
+             if (httpMethod != null) {
+-                return httpMethod.value().toLowerCase();
++                try {
++                    Method valueMethod = httpMethod.annotationType().getMethod("value");
++                    return ((String) valueMethod.invoke(httpMethod)).toLowerCase();
++                } catch (Exception e) {
++                }
+             }
+         }
+         return null;
