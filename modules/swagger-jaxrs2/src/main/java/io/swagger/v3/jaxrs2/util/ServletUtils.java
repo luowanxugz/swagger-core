@@ -5,10 +5,11 @@ import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.core.MultivaluedHashMap;
+import java.util.LinkedHashMap;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -20,8 +21,8 @@ public class ServletUtils {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ServletUtils.class);
 
-    public static MultivaluedHashMap<String, String> getQueryParams(Map<String, String[]> parameterMap) {
-        MultivaluedHashMap<String, String> queryParameters = new MultivaluedHashMap<>();
+    public static Map<String, List<String>> getQueryParams(Map<String, String[]> parameterMap) {
+        Map<String, List<String>> queryParameters = new LinkedHashMap<>();
 
         if (parameterMap.size() == 0) {
             return queryParameters;
@@ -30,8 +31,9 @@ public class ServletUtils {
         for (Map.Entry<String, String[]> parameter : parameterMap.entrySet()) {
             for (String value : parameter.getValue()) {
                 try {
-                    queryParameters.add(URLDecoder.decode(parameter.getKey(), StandardCharsets.UTF_8.name()),
-                            URLDecoder.decode(value, StandardCharsets.UTF_8.name()));
+                    String key = URLDecoder.decode(parameter.getKey(), StandardCharsets.UTF_8.name());
+                    String decodedValue = URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+                    queryParameters.computeIfAbsent(key, k -> new ArrayList<>()).add(decodedValue);
                 } catch (UnsupportedEncodingException e) {
                     LOGGER.error("Unable to decode query parameter", e);
                 }
