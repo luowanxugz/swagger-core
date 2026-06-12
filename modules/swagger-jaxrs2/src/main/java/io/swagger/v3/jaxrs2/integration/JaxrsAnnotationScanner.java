@@ -93,10 +93,12 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
         final Set<Class<?>> classes;
         try (ScanResult scanResult = graph.scan()) {
             classes = new HashSet<>(scanResult.getClassesWithAnnotation(javax.ws.rs.Path.class.getName()).loadClasses());
+            classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("jakarta.ws.rs.Path").loadClasses()));
             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(OpenAPIDefinition.class.getName()).loadClasses()));
             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(Webhooks.class.getName()).loadClasses()));
             if (Boolean.TRUE.equals(openApiConfiguration.isAlwaysResolveAppPath())) {
                 classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(ApplicationPath.class.getName()).loadClasses()));
+                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("jakarta.ws.rs.ApplicationPath").loadClasses()));
             }
         }
 

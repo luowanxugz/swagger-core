@@ -62,11 +62,21 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                 qp.setIn(QUERY_PARAM);
                 qp.setName(param.value());
                 parameter = qp;
+            } else if (isAnnotationType(annotation, "jakarta.ws.rs.QueryParam")) {
+                Parameter qp = new Parameter();
+                qp.setIn(QUERY_PARAM);
+                qp.setName(getAnnotationValue(annotation));
+                parameter = qp;
             } else if (annotation instanceof PathParam) {
                 PathParam param = (PathParam) annotation;
                 Parameter pp = new Parameter();
                 pp.setIn(PATH_PARAM);
                 pp.setName(param.value());
+                parameter = pp;
+            } else if (isAnnotationType(annotation, "jakarta.ws.rs.PathParam")) {
+                Parameter pp = new Parameter();
+                pp.setIn(PATH_PARAM);
+                pp.setName(getAnnotationValue(annotation));
                 parameter = pp;
             } else if (annotation instanceof MatrixParam) {
                 MatrixParam param = (MatrixParam) annotation;
@@ -75,17 +85,33 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                 pp.setStyle(Parameter.StyleEnum.MATRIX);
                 pp.setName(param.value());
                 parameter = pp;
+            } else if (isAnnotationType(annotation, "jakarta.ws.rs.MatrixParam")) {
+                Parameter pp = new Parameter();
+                pp.setIn(PATH_PARAM);
+                pp.setStyle(Parameter.StyleEnum.MATRIX);
+                pp.setName(getAnnotationValue(annotation));
+                parameter = pp;
             } else if (annotation instanceof HeaderParam) {
                 HeaderParam param = (HeaderParam) annotation;
                 Parameter pp = new Parameter();
                 pp.setIn(HEADER_PARAM);
                 pp.setName(param.value());
                 parameter = pp;
+            } else if (isAnnotationType(annotation, "jakarta.ws.rs.HeaderParam")) {
+                Parameter pp = new Parameter();
+                pp.setIn(HEADER_PARAM);
+                pp.setName(getAnnotationValue(annotation));
+                parameter = pp;
             } else if (annotation instanceof CookieParam) {
                 CookieParam param = (CookieParam) annotation;
                 Parameter pp = new Parameter();
                 pp.setIn(COOKIE_PARAM);
                 pp.setName(param.value());
+                parameter = pp;
+            } else if (isAnnotationType(annotation, "jakarta.ws.rs.CookieParam")) {
+                Parameter pp = new Parameter();
+                pp.setIn(COOKIE_PARAM);
+                pp.setName(getAnnotationValue(annotation));
                 parameter = pp;
             } else if (annotation instanceof io.swagger.v3.oas.annotations.Parameter) {
                 if (((io.swagger.v3.oas.annotations.Parameter) annotation).hidden()) {
@@ -163,7 +189,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
                                                final Type type, Set<Type> typesToSkip, javax.ws.rs.Consumes classConsumes,
                                                javax.ws.rs.Consumes methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
         boolean processed = false;
-        if (BeanParam.class.isAssignableFrom(annotation.getClass())) {
+        if (BeanParam.class.isAssignableFrom(annotation.getClass()) ||
+                isAnnotationType(annotation, "jakarta.ws.rs.BeanParam")) {
             // Use Jackson's logic for processing Beans
             final BeanDescription beanDesc = mapper.getSerializationConfig().introspect(constructType(type));
             final List<BeanPropertyDefinition> properties = beanDesc.findProperties();
@@ -280,7 +307,19 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
 
     @Override
     protected boolean shouldIgnoreClass(Class<?> cls) {
-        return cls.getName().startsWith("javax.ws.rs.");
+        return cls.getName().startsWith("javax.ws.rs.") || cls.getName().startsWith("jakarta.ws.rs.");
+    }
+
+    private static boolean isAnnotationType(Annotation annotation, String annotationName) {
+        return annotation.annotationType().getName().equals(annotationName);
+    }
+
+    private static String getAnnotationValue(Annotation annotation) {
+        try {
+            return (String) annotation.annotationType().getMethod("value").invoke(annotation);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
 }

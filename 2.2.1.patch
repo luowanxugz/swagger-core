@@ -1,0 +1,512 @@
+diff --git a/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java b/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
+index 7d61984a5..72ca98fb4 100644
+--- a/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
++++ b/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
+@@ -155,7 +155,8 @@ public class ParameterProcessor {
+ 
+         // handle first FormParam as it affects Explode resolving
+         for (Annotation annotation : annotations) {
+-            if (annotation.annotationType().getName().equals("javax.ws.rs.FormParam")) {
++            if (annotation.annotationType().getName().equals("javax.ws.rs.FormParam") ||
++                    annotation.annotationType().getName().equals("jakarta.ws.rs.FormParam")) {
+                 try {
+                     String name = (String) annotation.annotationType().getMethod(VALUE_METHOD).invoke(annotation);
+                     if (StringUtils.isNotBlank(name)) {
+@@ -248,7 +249,8 @@ public class ParameterProcessor {
+                 setParameterStyle(parameter, p);
+                 setParameterExplode(parameter, p);
+ 
+-            } else if (annotation.annotationType().getName().equals("javax.ws.rs.PathParam")) {
++            } else if (annotation.annotationType().getName().equals("javax.ws.rs.PathParam") ||
++                    annotation.annotationType().getName().equals("jakarta.ws.rs.PathParam")) {
+                 try {
+                     String name = (String) annotation.annotationType().getMethod(VALUE_METHOD).invoke(annotation);
+                     if (StringUtils.isNotBlank(name)) {
+@@ -433,9 +435,11 @@ public class ParameterProcessor {
+             String rsDefault = null;
+             if (annotations != null) {
+                 for (Annotation item : annotations) {
+-                    if ("javax.ws.rs.core.Context".equals(item.annotationType().getName())) {
+-                        context = true;
+-                    } else if ("javax.ws.rs.DefaultValue".equals(item.annotationType().getName())) {
++                if ("javax.ws.rs.core.Context".equals(item.annotationType().getName()) ||
++                        "jakarta.ws.rs.core.Context".equals(item.annotationType().getName())) {
++                    context = true;
++                } else if ("javax.ws.rs.DefaultValue".equals(item.annotationType().getName()) ||
++                        "jakarta.ws.rs.DefaultValue".equals(item.annotationType().getName())) {
+                         try {
+                             rsDefault = (String) item.annotationType().getMethod(VALUE_METHOD).invoke(item);
+                         } catch (Exception ex) {
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java
+index bf6bd03df..001f973b0 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/DefaultParameterExtension.java
+@@ -62,12 +62,22 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                 qp.setIn(QUERY_PARAM);
+                 qp.setName(param.value());
+                 parameter = qp;
++            } else if (isAnnotationType(annotation, "jakarta.ws.rs.QueryParam")) {
++                Parameter qp = new Parameter();
++                qp.setIn(QUERY_PARAM);
++                qp.setName(getAnnotationValue(annotation));
++                parameter = qp;
+             } else if (annotation instanceof PathParam) {
+                 PathParam param = (PathParam) annotation;
+                 Parameter pp = new Parameter();
+                 pp.setIn(PATH_PARAM);
+                 pp.setName(param.value());
+                 parameter = pp;
++            } else if (isAnnotationType(annotation, "jakarta.ws.rs.PathParam")) {
++                Parameter pp = new Parameter();
++                pp.setIn(PATH_PARAM);
++                pp.setName(getAnnotationValue(annotation));
++                parameter = pp;
+             } else if (annotation instanceof MatrixParam) {
+                 MatrixParam param = (MatrixParam) annotation;
+                 Parameter pp = new Parameter();
+@@ -75,18 +85,34 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                 pp.setStyle(Parameter.StyleEnum.MATRIX);
+                 pp.setName(param.value());
+                 parameter = pp;
++            } else if (isAnnotationType(annotation, "jakarta.ws.rs.MatrixParam")) {
++                Parameter pp = new Parameter();
++                pp.setIn(PATH_PARAM);
++                pp.setStyle(Parameter.StyleEnum.MATRIX);
++                pp.setName(getAnnotationValue(annotation));
++                parameter = pp;
+             } else if (annotation instanceof HeaderParam) {
+                 HeaderParam param = (HeaderParam) annotation;
+                 Parameter pp = new Parameter();
+                 pp.setIn(HEADER_PARAM);
+                 pp.setName(param.value());
+                 parameter = pp;
++            } else if (isAnnotationType(annotation, "jakarta.ws.rs.HeaderParam")) {
++                Parameter pp = new Parameter();
++                pp.setIn(HEADER_PARAM);
++                pp.setName(getAnnotationValue(annotation));
++                parameter = pp;
+             } else if (annotation instanceof CookieParam) {
+                 CookieParam param = (CookieParam) annotation;
+                 Parameter pp = new Parameter();
+                 pp.setIn(COOKIE_PARAM);
+                 pp.setName(param.value());
+                 parameter = pp;
++            } else if (isAnnotationType(annotation, "jakarta.ws.rs.CookieParam")) {
++                Parameter pp = new Parameter();
++                pp.setIn(COOKIE_PARAM);
++                pp.setName(getAnnotationValue(annotation));
++                parameter = pp;
+             } else if (annotation instanceof io.swagger.v3.oas.annotations.Parameter) {
+                 if (((io.swagger.v3.oas.annotations.Parameter) annotation).hidden()) {
+                     return new ResolvedParameter();
+@@ -163,7 +189,8 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+                                                final Type type, Set<Type> typesToSkip, javax.ws.rs.Consumes classConsumes,
+                                                javax.ws.rs.Consumes methodConsumes, Components components, boolean includeRequestBody, JsonView jsonViewAnnotation) {
+         boolean processed = false;
+-        if (BeanParam.class.isAssignableFrom(annotation.getClass())) {
++        if (BeanParam.class.isAssignableFrom(annotation.getClass()) ||
++                isAnnotationType(annotation, "jakarta.ws.rs.BeanParam")) {
+             // Use Jackson's logic for processing Beans
+             final BeanDescription beanDesc = mapper.getSerializationConfig().introspect(constructType(type));
+             final List<BeanPropertyDefinition> properties = beanDesc.findProperties();
+@@ -280,7 +307,19 @@ public class DefaultParameterExtension extends AbstractOpenAPIExtension {
+ 
+     @Override
+     protected boolean shouldIgnoreClass(Class<?> cls) {
+-        return cls.getName().startsWith("javax.ws.rs.");
++        return cls.getName().startsWith("javax.ws.rs.") || cls.getName().startsWith("jakarta.ws.rs.");
++    }
++
++    private static boolean isAnnotationType(Annotation annotation, String annotationName) {
++        return annotation.annotationType().getName().equals(annotationName);
++    }
++
++    private static String getAnnotationValue(Annotation annotation) {
++        try {
++            return (String) annotation.annotationType().getMethod("value").invoke(annotation);
++        } catch (Exception ex) {
++            return null;
++        }
+     }
+ 
+ }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
+index b15115aaf..da479a966 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/Reader.java
+@@ -100,6 +100,54 @@ public class Reader implements OpenApiReader {
+     private static final String HEAD_METHOD = "head";
+     private static final String OPTIONS_METHOD = "options";
+ 
++    private static Class<?> loadAnnotation(String className) {
++        try {
++            return Class.forName(className);
++        } catch (ClassNotFoundException e) {
++            return null;
++        }
++    }
++
++    @SuppressWarnings("unchecked")
++    private static <A extends Annotation> A getAnnotation(Class<?> cls, String className) {
++        Class<?> annotationClass = loadAnnotation(className);
++        if (annotationClass == null) {
++            return null;
++        }
++        return (A) cls.getAnnotation((Class<? extends Annotation>) annotationClass);
++    }
++
++    @SuppressWarnings("unchecked")
++    private static <A extends Annotation> A getAnnotation(Method method, String className) {
++        Class<?> annotationClass = loadAnnotation(className);
++        if (annotationClass == null) {
++            return null;
++        }
++        return (A) method.getAnnotation((Class<? extends Annotation>) annotationClass);
++    }
++
++    private static String getAnnotationValue(Annotation annotation) {
++        if (annotation == null) {
++            return null;
++        }
++        try {
++            return (String) annotation.annotationType().getMethod("value").invoke(annotation);
++        } catch (Exception e) {
++            return null;
++        }
++    }
++
++    private static String[] getAnnotationValues(Annotation annotation) {
++        if (annotation == null) {
++            return null;
++        }
++        try {
++            return (String[]) annotation.annotationType().getMethod("value").invoke(annotation);
++        } catch (Exception e) {
++            return null;
++        }
++    }
++
+     public Reader() {
+         this(new OpenAPI(), new Paths(), new LinkedHashSet<>(), new Components());
+     }
+@@ -179,6 +227,11 @@ public class Reader implements OpenApiReader {
+                     ApplicationPath appPathAnnotation = ReflectionUtils.getAnnotation(cls, ApplicationPath.class);
+                     if (appPathAnnotation != null) {
+                         appPath = appPathAnnotation.value();
++                    } else {
++                        Annotation jakartaAppPath = getAnnotation(cls, "jakarta.ws.rs.ApplicationPath");
++                        if (jakartaAppPath != null) {
++                            appPath = getAnnotationValue(jakartaAppPath);
++                        }
+                     }
+                 }
+             }
+@@ -245,6 +298,20 @@ public class Reader implements OpenApiReader {
+                 if (StringUtils.isNotBlank(applicationPath.value())) {
+                     return applicationPath.value();
+                 }
++            } else {
++                // try jakarta.ws.rs.ApplicationPath
++                Class<?> applicationToScanJakarta = this.application.getClass();
++                Annotation jakartaApplicationPath;
++                while ((jakartaApplicationPath = getAnnotation(applicationToScanJakarta, "jakarta.ws.rs.ApplicationPath")) == null
++                        && !applicationToScanJakarta.getSuperclass().equals(Application.class)) {
++                    applicationToScanJakarta = applicationToScanJakarta.getSuperclass();
++                }
++                if (jakartaApplicationPath != null) {
++                    String value = getAnnotationValue(jakartaApplicationPath);
++                    if (StringUtils.isNotBlank(value)) {
++                        return value;
++                    }
++                }
+             }
+             // look for inner application, e.g. ResourceConfig
+             try {
+@@ -265,6 +332,13 @@ public class Reader implements OpenApiReader {
+                             return applicationPath.value();
+                         }
+                     }
++                    Annotation jakartaApplicationPath = getAnnotation(innerApp.getClass(), "jakarta.ws.rs.ApplicationPath");
++                    if (jakartaApplicationPath != null) {
++                        String value = getAnnotationValue(jakartaApplicationPath);
++                        if (StringUtils.isNotBlank(value)) {
++                            return value;
++                        }
++                    }
+                     m = innerApp.getClass().getMethod("getApplication");
+                 }
+             } catch (Exception e) {
+@@ -287,6 +361,27 @@ public class Reader implements OpenApiReader {
+         Hidden hidden = cls.getAnnotation(Hidden.class);
+         // class path
+         final javax.ws.rs.Path apiPath = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Path.class);
++        final javax.ws.rs.Path apiPathJakarta;
++        if (apiPath != null) {
++            apiPathJakarta = apiPath;
++        } else {
++            Annotation jakartaApiPath = getAnnotation(cls, "jakarta.ws.rs.Path");
++            if (jakartaApiPath != null) {
++                String value = getAnnotationValue(jakartaApiPath);
++                apiPathJakarta = new javax.ws.rs.Path() {
++                    @Override
++                    public String value() {
++                        return value == null ? "" : value;
++                    }
++                    @Override
++                    public Class<? extends Annotation> annotationType() {
++                        return javax.ws.rs.Path.class;
++                    }
++                };
++            } else {
++                apiPathJakarta = null;
++            }
++        }
+         final boolean openapi31 = Boolean.TRUE.equals(config.isOpenAPI31());
+ 
+         if (
+@@ -315,7 +410,40 @@ public class Reader implements OpenApiReader {
+         io.swagger.v3.oas.annotations.servers.Server[] apiServers = ReflectionUtils.getRepeatableAnnotationsArray(cls, io.swagger.v3.oas.annotations.servers.Server.class);
+ 
+         javax.ws.rs.Consumes classConsumes = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Consumes.class);
++        if (classConsumes == null) {
++            Annotation jakartaClassConsumes = getAnnotation(cls, "jakarta.ws.rs.Consumes");
++            if (jakartaClassConsumes != null) {
++                // Create a wrapper-like proxy - simpler: just use reflection to build a mock
++                String[] values = getAnnotationValues(jakartaClassConsumes);
++                classConsumes = new javax.ws.rs.Consumes() {
++                    @Override
++                    public String[] value() {
++                        return values == null ? new String[0] : values;
++                    }
++                    @Override
++                    public Class<? extends Annotation> annotationType() {
++                        return javax.ws.rs.Consumes.class;
++                    }
++                };
++            }
++        }
+         javax.ws.rs.Produces classProduces = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Produces.class);
++        if (classProduces == null) {
++            Annotation jakartaClassProduces = getAnnotation(cls, "jakarta.ws.rs.Produces");
++            if (jakartaClassProduces != null) {
++                String[] values = getAnnotationValues(jakartaClassProduces);
++                classProduces = new javax.ws.rs.Produces() {
++                    @Override
++                    public String[] value() {
++                        return values == null ? new String[0] : values;
++                    }
++                    @Override
++                    public Class<? extends Annotation> annotationType() {
++                        return javax.ws.rs.Produces.class;
++                    }
++                };
++            }
++        }
+ 
+         boolean classDeprecated = ReflectionUtils.getAnnotation(cls, Deprecated.class) != null
+                 || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(cls, KotlinDetector.getKotlinDeprecated()) != null);
+@@ -441,7 +569,39 @@ public class Reader implements OpenApiReader {
+             }
+             AnnotatedMethod annotatedMethod = bd.findMethod(method.getName(), method.getParameterTypes());
+             javax.ws.rs.Produces methodProduces = ReflectionUtils.getAnnotation(method, javax.ws.rs.Produces.class);
++            if (methodProduces == null) {
++                Annotation jakartaProduces = getAnnotation(method, "jakarta.ws.rs.Produces");
++                if (jakartaProduces != null) {
++                    String[] values = getAnnotationValues(jakartaProduces);
++                    methodProduces = new javax.ws.rs.Produces() {
++                        @Override
++                        public String[] value() {
++                            return values == null ? new String[0] : values;
++                        }
++                        @Override
++                        public Class<? extends Annotation> annotationType() {
++                            return javax.ws.rs.Produces.class;
++                        }
++                    };
++                }
++            }
+             javax.ws.rs.Consumes methodConsumes = ReflectionUtils.getAnnotation(method, javax.ws.rs.Consumes.class);
++            if (methodConsumes == null) {
++                Annotation jakartaConsumes = getAnnotation(method, "jakarta.ws.rs.Consumes");
++                if (jakartaConsumes != null) {
++                    String[] values = getAnnotationValues(jakartaConsumes);
++                    methodConsumes = new javax.ws.rs.Consumes() {
++                        @Override
++                        public String[] value() {
++                            return values == null ? new String[0] : values;
++                        }
++                        @Override
++                        public Class<? extends Annotation> annotationType() {
++                            return javax.ws.rs.Consumes.class;
++                        }
++                    };
++                }
++            }
+ 
+             if (isMethodOverridden(method, cls)) {
+                 continue;
+@@ -451,8 +611,24 @@ public class Reader implements OpenApiReader {
+                     || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(method, KotlinDetector.getKotlinDeprecated()) != null);
+ 
+             javax.ws.rs.Path methodPath = ReflectionUtils.getAnnotation(method, javax.ws.rs.Path.class);
++            if (methodPath == null) {
++                Annotation jakartaMethodPath = getAnnotation(method, "jakarta.ws.rs.Path");
++                if (jakartaMethodPath != null) {
++                    String value = getAnnotationValue(jakartaMethodPath);
++                    methodPath = new javax.ws.rs.Path() {
++                        @Override
++                        public String value() {
++                            return value == null ? "" : value;
++                        }
++                        @Override
++                        public Class<? extends Annotation> annotationType() {
++                            return javax.ws.rs.Path.class;
++                        }
++                    };
++                }
++            }
+ 
+-            String operationPath = ReaderUtils.getPath(apiPath, methodPath, parentPath, isSubresource);
++            String operationPath = ReaderUtils.getPath(apiPathJakarta, methodPath, parentPath, isSubresource);
+ 
+             // skip if path is the same as parent, e.g. for @ApplicationPath annotated application
+             // extending resource config.
+@@ -1328,6 +1504,7 @@ public class Reader implements OpenApiReader {
+             rawClassName = rawClassName.substring(0, rawClassName.length() -1);
+         }
+         ignore = rawClassName.startsWith("javax.ws.rs.");
++        ignore = ignore || rawClassName.startsWith("jakarta.ws.rs.");
+         ignore = ignore || rawClassName.equalsIgnoreCase("void");
+         ignore = ignore || ModelConverters.getInstance(config.toConfiguration()).isRegisteredAsSkippedClass(rawClassName);
+         return ignore;
+@@ -1680,7 +1857,8 @@ public class Reader implements OpenApiReader {
+             type = rawType;
+         }
+ 
+-        if (method.getAnnotation(javax.ws.rs.Path.class) != null) {
++        if (method.getAnnotation(javax.ws.rs.Path.class) != null
++                || getAnnotation(method, "jakarta.ws.rs.Path") != null) {
+             if (ReaderUtils.extractOperationMethod(method, null) == null) {
+                 return type;
+             }
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
+index 155ec649a..f3aee4dd1 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/integration/JaxrsAnnotationScanner.java
+@@ -93,10 +93,12 @@ public class JaxrsAnnotationScanner<T extends JaxrsAnnotationScanner<T>> impleme
+         final Set<Class<?>> classes;
+         try (ScanResult scanResult = graph.scan()) {
+             classes = new HashSet<>(scanResult.getClassesWithAnnotation(javax.ws.rs.Path.class.getName()).loadClasses());
++            classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("jakarta.ws.rs.Path").loadClasses()));
+             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(OpenAPIDefinition.class.getName()).loadClasses()));
+             classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(Webhooks.class.getName()).loadClasses()));
+             if (Boolean.TRUE.equals(openApiConfiguration.isAlwaysResolveAppPath())) {
+                 classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation(ApplicationPath.class.getName()).loadClasses()));
++                classes.addAll(new HashSet<>(scanResult.getClassesWithAnnotation("jakarta.ws.rs.ApplicationPath").loadClasses()));
+             }
+         }
+ 
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+index e3bb41d9d..423213715 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+@@ -36,6 +36,37 @@ public class ReaderUtils {
+     private static final String OPTIONS_METHOD = "options";
+     private static final String PATH_DELIMITER = "/";
+ 
++    private static final Class<?> JAVAX_GET = loadAnnotation("javax.ws.rs.GET");
++    private static final Class<?> JAKARTA_GET = loadAnnotation("jakarta.ws.rs.GET");
++    private static final Class<?> JAVAX_PUT = loadAnnotation("javax.ws.rs.PUT");
++    private static final Class<?> JAKARTA_PUT = loadAnnotation("jakarta.ws.rs.PUT");
++    private static final Class<?> JAVAX_POST = loadAnnotation("javax.ws.rs.POST");
++    private static final Class<?> JAKARTA_POST = loadAnnotation("jakarta.ws.rs.POST");
++    private static final Class<?> JAVAX_DELETE = loadAnnotation("javax.ws.rs.DELETE");
++    private static final Class<?> JAKARTA_DELETE = loadAnnotation("jakarta.ws.rs.DELETE");
++    private static final Class<?> JAVAX_OPTIONS = loadAnnotation("javax.ws.rs.OPTIONS");
++    private static final Class<?> JAKARTA_OPTIONS = loadAnnotation("jakarta.ws.rs.OPTIONS");
++    private static final Class<?> JAVAX_HEAD = loadAnnotation("javax.ws.rs.HEAD");
++    private static final Class<?> JAKARTA_HEAD = loadAnnotation("jakarta.ws.rs.HEAD");
++    private static final Class<?> JAVAX_HTTP_METHOD = loadAnnotation("javax.ws.rs.HttpMethod");
++    private static final Class<?> JAKARTA_HTTP_METHOD = loadAnnotation("jakarta.ws.rs.HttpMethod");
++
++    private static Class<?> loadAnnotation(String className) {
++        try {
++            return Class.forName(className);
++        } catch (ClassNotFoundException e) {
++            return null;
++        }
++    }
++
++    @SuppressWarnings("unchecked")
++    private static boolean hasAnnotation(Method method, Class<?> annotationClass) {
++        if (annotationClass == null) {
++            return false;
++        }
++        return method.getAnnotation((Class<? extends Annotation>) annotationClass) != null;
++    }
++
+     public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
+         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, null);
+     }
+@@ -134,6 +165,9 @@ public class ReaderUtils {
+             if (annotation instanceof Context) {
+                 return true;
+             }
++            if ("jakarta.ws.rs.core.Context".equals(annotation.annotationType().getName())) {
++                return true;
++            }
+         }
+         return false;
+     }
+@@ -209,21 +243,28 @@ public class ReaderUtils {
+     }
+ 
+     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
+-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
++        if (hasAnnotation(method, JAVAX_GET) || hasAnnotation(method, JAKARTA_GET)) {
+             return GET_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
++        } else if (hasAnnotation(method, JAVAX_PUT) || hasAnnotation(method, JAKARTA_PUT)) {
+             return PUT_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
++        } else if (hasAnnotation(method, JAVAX_POST) || hasAnnotation(method, JAKARTA_POST)) {
+             return POST_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
++        } else if (hasAnnotation(method, JAVAX_DELETE) || hasAnnotation(method, JAKARTA_DELETE)) {
+             return DELETE_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
++        } else if (hasAnnotation(method, JAVAX_OPTIONS) || hasAnnotation(method, JAKARTA_OPTIONS)) {
+             return OPTIONS_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
++        } else if (hasAnnotation(method, JAVAX_HEAD) || hasAnnotation(method, JAKARTA_HEAD)) {
+             return HEAD_METHOD;
+         } else if (method.getAnnotation(HttpMethod.class) != null) {
+             HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
+             return httpMethod.value().toLowerCase();
++        } else if (JAKARTA_HTTP_METHOD != null && hasAnnotation(method, JAKARTA_HTTP_METHOD)) {
++            Annotation httpMethod = method.getAnnotation((Class<? extends Annotation>) JAKARTA_HTTP_METHOD);
++            try {
++                return ((String) httpMethod.annotationType().getMethod("value").invoke(httpMethod)).toLowerCase();
++            } catch (Exception e) {
++                return null;
++            }
+         } else if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
+             return getHttpMethodFromCustomAnnotations(method);
+         } else if ((ReflectionUtils.getOverriddenMethod(method)) != null) {
+@@ -241,6 +282,16 @@ public class ReaderUtils {
+             if (httpMethod != null) {
+                 return httpMethod.value().toLowerCase();
+             }
++            if (JAKARTA_HTTP_METHOD != null) {
++                Annotation jakartaHttpMethod = methodAnnotation.annotationType().getAnnotation((Class<? extends Annotation>) JAKARTA_HTTP_METHOD);
++                if (jakartaHttpMethod != null) {
++                    try {
++                        return ((String) jakartaHttpMethod.annotationType().getMethod("value").invoke(jakartaHttpMethod)).toLowerCase();
++                    } catch (Exception e) {
++                        return null;
++                    }
++                }
++            }
+         }
+         return null;
+     }

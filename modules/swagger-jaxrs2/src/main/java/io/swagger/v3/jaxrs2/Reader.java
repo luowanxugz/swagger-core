@@ -100,6 +100,54 @@ public class Reader implements OpenApiReader {
     private static final String HEAD_METHOD = "head";
     private static final String OPTIONS_METHOD = "options";
 
+    private static Class<?> loadAnnotation(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <A extends Annotation> A getAnnotation(Class<?> cls, String className) {
+        Class<?> annotationClass = loadAnnotation(className);
+        if (annotationClass == null) {
+            return null;
+        }
+        return (A) cls.getAnnotation((Class<? extends Annotation>) annotationClass);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <A extends Annotation> A getAnnotation(Method method, String className) {
+        Class<?> annotationClass = loadAnnotation(className);
+        if (annotationClass == null) {
+            return null;
+        }
+        return (A) method.getAnnotation((Class<? extends Annotation>) annotationClass);
+    }
+
+    private static String getAnnotationValue(Annotation annotation) {
+        if (annotation == null) {
+            return null;
+        }
+        try {
+            return (String) annotation.annotationType().getMethod("value").invoke(annotation);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String[] getAnnotationValues(Annotation annotation) {
+        if (annotation == null) {
+            return null;
+        }
+        try {
+            return (String[]) annotation.annotationType().getMethod("value").invoke(annotation);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public Reader() {
         this(new OpenAPI(), new Paths(), new LinkedHashSet<>(), new Components());
     }
@@ -179,6 +227,11 @@ public class Reader implements OpenApiReader {
                     ApplicationPath appPathAnnotation = ReflectionUtils.getAnnotation(cls, ApplicationPath.class);
                     if (appPathAnnotation != null) {
                         appPath = appPathAnnotation.value();
+                    } else {
+                        Annotation jakartaAppPath = getAnnotation(cls, "jakarta.ws.rs.ApplicationPath");
+                        if (jakartaAppPath != null) {
+                            appPath = getAnnotationValue(jakartaAppPath);
+                        }
                     }
                 }
             }
@@ -245,6 +298,20 @@ public class Reader implements OpenApiReader {
                 if (StringUtils.isNotBlank(applicationPath.value())) {
                     return applicationPath.value();
                 }
+            } else {
+                // try jakarta.ws.rs.ApplicationPath
+                Class<?> applicationToScanJakarta = this.application.getClass();
+                Annotation jakartaApplicationPath;
+                while ((jakartaApplicationPath = getAnnotation(applicationToScanJakarta, "jakarta.ws.rs.ApplicationPath")) == null
+                        && !applicationToScanJakarta.getSuperclass().equals(Application.class)) {
+                    applicationToScanJakarta = applicationToScanJakarta.getSuperclass();
+                }
+                if (jakartaApplicationPath != null) {
+                    String value = getAnnotationValue(jakartaApplicationPath);
+                    if (StringUtils.isNotBlank(value)) {
+                        return value;
+                    }
+                }
             }
             // look for inner application, e.g. ResourceConfig
             try {
@@ -263,6 +330,13 @@ public class Reader implements OpenApiReader {
                     if (applicationPath != null) {
                         if (StringUtils.isNotBlank(applicationPath.value())) {
                             return applicationPath.value();
+                        }
+                    }
+                    Annotation jakartaApplicationPath = getAnnotation(innerApp.getClass(), "jakarta.ws.rs.ApplicationPath");
+                    if (jakartaApplicationPath != null) {
+                        String value = getAnnotationValue(jakartaApplicationPath);
+                        if (StringUtils.isNotBlank(value)) {
+                            return value;
                         }
                     }
                     m = innerApp.getClass().getMethod("getApplication");
@@ -287,6 +361,27 @@ public class Reader implements OpenApiReader {
         Hidden hidden = cls.getAnnotation(Hidden.class);
         // class path
         final javax.ws.rs.Path apiPath = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Path.class);
+        final javax.ws.rs.Path apiPathJakarta;
+        if (apiPath != null) {
+            apiPathJakarta = apiPath;
+        } else {
+            Annotation jakartaApiPath = getAnnotation(cls, "jakarta.ws.rs.Path");
+            if (jakartaApiPath != null) {
+                String value = getAnnotationValue(jakartaApiPath);
+                apiPathJakarta = new javax.ws.rs.Path() {
+                    @Override
+                    public String value() {
+                        return value == null ? "" : value;
+                    }
+                    @Override
+                    public Class<? extends Annotation> annotationType() {
+                        return javax.ws.rs.Path.class;
+                    }
+                };
+            } else {
+                apiPathJakarta = null;
+            }
+        }
         final boolean openapi31 = Boolean.TRUE.equals(config.isOpenAPI31());
 
         if (
@@ -315,7 +410,40 @@ public class Reader implements OpenApiReader {
         io.swagger.v3.oas.annotations.servers.Server[] apiServers = ReflectionUtils.getRepeatableAnnotationsArray(cls, io.swagger.v3.oas.annotations.servers.Server.class);
 
         javax.ws.rs.Consumes classConsumes = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Consumes.class);
+        if (classConsumes == null) {
+            Annotation jakartaClassConsumes = getAnnotation(cls, "jakarta.ws.rs.Consumes");
+            if (jakartaClassConsumes != null) {
+                // Create a wrapper-like proxy - simpler: just use reflection to build a mock
+                String[] values = getAnnotationValues(jakartaClassConsumes);
+                classConsumes = new javax.ws.rs.Consumes() {
+                    @Override
+                    public String[] value() {
+                        return values == null ? new String[0] : values;
+                    }
+                    @Override
+                    public Class<? extends Annotation> annotationType() {
+                        return javax.ws.rs.Consumes.class;
+                    }
+                };
+            }
+        }
         javax.ws.rs.Produces classProduces = ReflectionUtils.getAnnotation(cls, javax.ws.rs.Produces.class);
+        if (classProduces == null) {
+            Annotation jakartaClassProduces = getAnnotation(cls, "jakarta.ws.rs.Produces");
+            if (jakartaClassProduces != null) {
+                String[] values = getAnnotationValues(jakartaClassProduces);
+                classProduces = new javax.ws.rs.Produces() {
+                    @Override
+                    public String[] value() {
+                        return values == null ? new String[0] : values;
+                    }
+                    @Override
+                    public Class<? extends Annotation> annotationType() {
+                        return javax.ws.rs.Produces.class;
+                    }
+                };
+            }
+        }
 
         boolean classDeprecated = ReflectionUtils.getAnnotation(cls, Deprecated.class) != null
                 || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(cls, KotlinDetector.getKotlinDeprecated()) != null);
@@ -441,7 +569,39 @@ public class Reader implements OpenApiReader {
             }
             AnnotatedMethod annotatedMethod = bd.findMethod(method.getName(), method.getParameterTypes());
             javax.ws.rs.Produces methodProduces = ReflectionUtils.getAnnotation(method, javax.ws.rs.Produces.class);
+            if (methodProduces == null) {
+                Annotation jakartaProduces = getAnnotation(method, "jakarta.ws.rs.Produces");
+                if (jakartaProduces != null) {
+                    String[] values = getAnnotationValues(jakartaProduces);
+                    methodProduces = new javax.ws.rs.Produces() {
+                        @Override
+                        public String[] value() {
+                            return values == null ? new String[0] : values;
+                        }
+                        @Override
+                        public Class<? extends Annotation> annotationType() {
+                            return javax.ws.rs.Produces.class;
+                        }
+                    };
+                }
+            }
             javax.ws.rs.Consumes methodConsumes = ReflectionUtils.getAnnotation(method, javax.ws.rs.Consumes.class);
+            if (methodConsumes == null) {
+                Annotation jakartaConsumes = getAnnotation(method, "jakarta.ws.rs.Consumes");
+                if (jakartaConsumes != null) {
+                    String[] values = getAnnotationValues(jakartaConsumes);
+                    methodConsumes = new javax.ws.rs.Consumes() {
+                        @Override
+                        public String[] value() {
+                            return values == null ? new String[0] : values;
+                        }
+                        @Override
+                        public Class<? extends Annotation> annotationType() {
+                            return javax.ws.rs.Consumes.class;
+                        }
+                    };
+                }
+            }
 
             if (isMethodOverridden(method, cls)) {
                 continue;
@@ -451,8 +611,24 @@ public class Reader implements OpenApiReader {
                     || (KotlinDetector.isKotlinPresent() && ReflectionUtils.getAnnotation(method, KotlinDetector.getKotlinDeprecated()) != null);
 
             javax.ws.rs.Path methodPath = ReflectionUtils.getAnnotation(method, javax.ws.rs.Path.class);
+            if (methodPath == null) {
+                Annotation jakartaMethodPath = getAnnotation(method, "jakarta.ws.rs.Path");
+                if (jakartaMethodPath != null) {
+                    String value = getAnnotationValue(jakartaMethodPath);
+                    methodPath = new javax.ws.rs.Path() {
+                        @Override
+                        public String value() {
+                            return value == null ? "" : value;
+                        }
+                        @Override
+                        public Class<? extends Annotation> annotationType() {
+                            return javax.ws.rs.Path.class;
+                        }
+                    };
+                }
+            }
 
-            String operationPath = ReaderUtils.getPath(apiPath, methodPath, parentPath, isSubresource);
+            String operationPath = ReaderUtils.getPath(apiPathJakarta, methodPath, parentPath, isSubresource);
 
             // skip if path is the same as parent, e.g. for @ApplicationPath annotated application
             // extending resource config.
@@ -1328,6 +1504,7 @@ public class Reader implements OpenApiReader {
             rawClassName = rawClassName.substring(0, rawClassName.length() -1);
         }
         ignore = rawClassName.startsWith("javax.ws.rs.");
+        ignore = ignore || rawClassName.startsWith("jakarta.ws.rs.");
         ignore = ignore || rawClassName.equalsIgnoreCase("void");
         ignore = ignore || ModelConverters.getInstance(config.toConfiguration()).isRegisteredAsSkippedClass(rawClassName);
         return ignore;
@@ -1680,7 +1857,8 @@ public class Reader implements OpenApiReader {
             type = rawType;
         }
 
-        if (method.getAnnotation(javax.ws.rs.Path.class) != null) {
+        if (method.getAnnotation(javax.ws.rs.Path.class) != null
+                || getAnnotation(method, "jakarta.ws.rs.Path") != null) {
             if (ReaderUtils.extractOperationMethod(method, null) == null) {
                 return type;
             }

@@ -36,6 +36,37 @@ public class ReaderUtils {
     private static final String OPTIONS_METHOD = "options";
     private static final String PATH_DELIMITER = "/";
 
+    private static final Class<?> JAVAX_GET = loadAnnotation("javax.ws.rs.GET");
+    private static final Class<?> JAKARTA_GET = loadAnnotation("jakarta.ws.rs.GET");
+    private static final Class<?> JAVAX_PUT = loadAnnotation("javax.ws.rs.PUT");
+    private static final Class<?> JAKARTA_PUT = loadAnnotation("jakarta.ws.rs.PUT");
+    private static final Class<?> JAVAX_POST = loadAnnotation("javax.ws.rs.POST");
+    private static final Class<?> JAKARTA_POST = loadAnnotation("jakarta.ws.rs.POST");
+    private static final Class<?> JAVAX_DELETE = loadAnnotation("javax.ws.rs.DELETE");
+    private static final Class<?> JAKARTA_DELETE = loadAnnotation("jakarta.ws.rs.DELETE");
+    private static final Class<?> JAVAX_OPTIONS = loadAnnotation("javax.ws.rs.OPTIONS");
+    private static final Class<?> JAKARTA_OPTIONS = loadAnnotation("jakarta.ws.rs.OPTIONS");
+    private static final Class<?> JAVAX_HEAD = loadAnnotation("javax.ws.rs.HEAD");
+    private static final Class<?> JAKARTA_HEAD = loadAnnotation("jakarta.ws.rs.HEAD");
+    private static final Class<?> JAVAX_HTTP_METHOD = loadAnnotation("javax.ws.rs.HttpMethod");
+    private static final Class<?> JAKARTA_HTTP_METHOD = loadAnnotation("jakarta.ws.rs.HttpMethod");
+
+    private static Class<?> loadAnnotation(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean hasAnnotation(Method method, Class<?> annotationClass) {
+        if (annotationClass == null) {
+            return false;
+        }
+        return method.getAnnotation((Class<? extends Annotation>) annotationClass) != null;
+    }
+
     public static List<Parameter> collectConstructorParameters(Class<?> cls, Components components, javax.ws.rs.Consumes classConsumes, JsonView jsonViewAnnotation) {
         return collectConstructorParameters(cls, components, classConsumes, jsonViewAnnotation, null);
     }
@@ -134,6 +165,9 @@ public class ReaderUtils {
             if (annotation instanceof Context) {
                 return true;
             }
+            if ("jakarta.ws.rs.core.Context".equals(annotation.annotationType().getName())) {
+                return true;
+            }
         }
         return false;
     }
@@ -209,21 +243,28 @@ public class ReaderUtils {
     }
 
     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
+        if (hasAnnotation(method, JAVAX_GET) || hasAnnotation(method, JAKARTA_GET)) {
             return GET_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_PUT) || hasAnnotation(method, JAKARTA_PUT)) {
             return PUT_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_POST) || hasAnnotation(method, JAKARTA_POST)) {
             return POST_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_DELETE) || hasAnnotation(method, JAKARTA_DELETE)) {
             return DELETE_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_OPTIONS) || hasAnnotation(method, JAKARTA_OPTIONS)) {
             return OPTIONS_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
+        } else if (hasAnnotation(method, JAVAX_HEAD) || hasAnnotation(method, JAKARTA_HEAD)) {
             return HEAD_METHOD;
         } else if (method.getAnnotation(HttpMethod.class) != null) {
             HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
             return httpMethod.value().toLowerCase();
+        } else if (JAKARTA_HTTP_METHOD != null && hasAnnotation(method, JAKARTA_HTTP_METHOD)) {
+            Annotation httpMethod = method.getAnnotation((Class<? extends Annotation>) JAKARTA_HTTP_METHOD);
+            try {
+                return ((String) httpMethod.annotationType().getMethod("value").invoke(httpMethod)).toLowerCase();
+            } catch (Exception e) {
+                return null;
+            }
         } else if (!StringUtils.isEmpty(getHttpMethodFromCustomAnnotations(method))) {
             return getHttpMethodFromCustomAnnotations(method);
         } else if ((ReflectionUtils.getOverriddenMethod(method)) != null) {
@@ -240,6 +281,16 @@ public class ReaderUtils {
             HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
             if (httpMethod != null) {
                 return httpMethod.value().toLowerCase();
+            }
+            if (JAKARTA_HTTP_METHOD != null) {
+                Annotation jakartaHttpMethod = methodAnnotation.annotationType().getAnnotation((Class<? extends Annotation>) JAKARTA_HTTP_METHOD);
+                if (jakartaHttpMethod != null) {
+                    try {
+                        return ((String) jakartaHttpMethod.annotationType().getMethod("value").invoke(jakartaHttpMethod)).toLowerCase();
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }
             }
         }
         return null;
