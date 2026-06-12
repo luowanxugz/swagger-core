@@ -209,17 +209,17 @@ public class ReaderUtils {
     }
 
     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
+        if (hasHttpMethodAnnotation(method, "javax.ws.rs.GET", "jakarta.ws.rs.GET")) {
             return GET_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
+        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.PUT", "jakarta.ws.rs.PUT")) {
             return PUT_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
+        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.POST", "jakarta.ws.rs.POST")) {
             return POST_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
+        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.DELETE", "jakarta.ws.rs.DELETE")) {
             return DELETE_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
+        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.OPTIONS", "jakarta.ws.rs.OPTIONS")) {
             return OPTIONS_METHOD;
-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
+        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.HEAD", "jakarta.ws.rs.HEAD")) {
             return HEAD_METHOD;
         } else if (method.getAnnotation(HttpMethod.class) != null) {
             HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
@@ -235,11 +235,44 @@ public class ReaderUtils {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private static boolean hasHttpMethodAnnotation(Method method, String javaxClassName, String jakartaClassName) {
+        Class<?> annotationClass = loadAnnotationClass(javaxClassName);
+        if (annotationClass != null && method.getAnnotation((Class) annotationClass) != null) {
+            return true;
+        }
+        annotationClass = loadAnnotationClass(jakartaClassName);
+        if (annotationClass != null && method.getAnnotation((Class) annotationClass) != null) {
+            return true;
+        }
+        return false;
+    }
+
+    private static Class<?> loadAnnotationClass(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
     public static String getHttpMethodFromCustomAnnotations(Method method) {
         for (Annotation methodAnnotation : method.getAnnotations()) {
             HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
             if (httpMethod != null) {
                 return httpMethod.value().toLowerCase();
+            }
+            Class<?> jakartaHttpMethod = loadAnnotationClass("jakarta.ws.rs.HttpMethod");
+            if (jakartaHttpMethod != null) {
+                Object jakartaAnnotation = methodAnnotation.annotationType().getAnnotation((Class) jakartaHttpMethod);
+                if (jakartaAnnotation != null) {
+                    try {
+                        return ((String) jakartaAnnotation.getClass().getMethod("value").invoke(jakartaAnnotation)).toLowerCase();
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
             }
         }
         return null;

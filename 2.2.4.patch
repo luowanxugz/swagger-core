@@ -1,0 +1,112 @@
+diff --git a/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java b/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
+index 7d61984a5..0571a6f0f 100644
+--- a/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
++++ b/modules/swagger-core/src/main/java/io/swagger/v3/core/util/ParameterProcessor.java
+@@ -155,7 +155,8 @@ public class ParameterProcessor {
+ 
+         // handle first FormParam as it affects Explode resolving
+         for (Annotation annotation : annotations) {
+-            if (annotation.annotationType().getName().equals("javax.ws.rs.FormParam")) {
++            if (annotation.annotationType().getName().equals("javax.ws.rs.FormParam")
++                    || annotation.annotationType().getName().equals("jakarta.ws.rs.FormParam")) {
+                 try {
+                     String name = (String) annotation.annotationType().getMethod(VALUE_METHOD).invoke(annotation);
+                     if (StringUtils.isNotBlank(name)) {
+@@ -248,7 +249,8 @@ public class ParameterProcessor {
+                 setParameterStyle(parameter, p);
+                 setParameterExplode(parameter, p);
+ 
+-            } else if (annotation.annotationType().getName().equals("javax.ws.rs.PathParam")) {
++            } else if (annotation.annotationType().getName().equals("javax.ws.rs.PathParam")
++                    || annotation.annotationType().getName().equals("jakarta.ws.rs.PathParam")) {
+                 try {
+                     String name = (String) annotation.annotationType().getMethod(VALUE_METHOD).invoke(annotation);
+                     if (StringUtils.isNotBlank(name)) {
+@@ -433,9 +435,11 @@ public class ParameterProcessor {
+             String rsDefault = null;
+             if (annotations != null) {
+                 for (Annotation item : annotations) {
+-                    if ("javax.ws.rs.core.Context".equals(item.annotationType().getName())) {
++                    if ("javax.ws.rs.core.Context".equals(item.annotationType().getName())
++                            || "jakarta.ws.rs.core.Context".equals(item.annotationType().getName())) {
+                         context = true;
+-                    } else if ("javax.ws.rs.DefaultValue".equals(item.annotationType().getName())) {
++                    } else if ("javax.ws.rs.DefaultValue".equals(item.annotationType().getName())
++                            || "jakarta.ws.rs.DefaultValue".equals(item.annotationType().getName())) {
+                         try {
+                             rsDefault = (String) item.annotationType().getMethod(VALUE_METHOD).invoke(item);
+                         } catch (Exception ex) {
+diff --git a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+index e3bb41d9d..1523a8d4c 100644
+--- a/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
++++ b/modules/swagger-jaxrs2/src/main/java/io/swagger/v3/jaxrs2/util/ReaderUtils.java
+@@ -209,17 +209,17 @@ public class ReaderUtils {
+     }
+ 
+     public static String extractOperationMethod(Method method, Iterator<OpenAPIExtension> chain) {
+-        if (method.getAnnotation(javax.ws.rs.GET.class) != null) {
++        if (hasHttpMethodAnnotation(method, "javax.ws.rs.GET", "jakarta.ws.rs.GET")) {
+             return GET_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.PUT.class) != null) {
++        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.PUT", "jakarta.ws.rs.PUT")) {
+             return PUT_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.POST.class) != null) {
++        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.POST", "jakarta.ws.rs.POST")) {
+             return POST_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.DELETE.class) != null) {
++        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.DELETE", "jakarta.ws.rs.DELETE")) {
+             return DELETE_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.OPTIONS.class) != null) {
++        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.OPTIONS", "jakarta.ws.rs.OPTIONS")) {
+             return OPTIONS_METHOD;
+-        } else if (method.getAnnotation(javax.ws.rs.HEAD.class) != null) {
++        } else if (hasHttpMethodAnnotation(method, "javax.ws.rs.HEAD", "jakarta.ws.rs.HEAD")) {
+             return HEAD_METHOD;
+         } else if (method.getAnnotation(HttpMethod.class) != null) {
+             HttpMethod httpMethod = method.getAnnotation(HttpMethod.class);
+@@ -235,12 +235,45 @@ public class ReaderUtils {
+         }
+     }
+ 
++    @SuppressWarnings("unchecked")
++    private static boolean hasHttpMethodAnnotation(Method method, String javaxClassName, String jakartaClassName) {
++        Class<?> annotationClass = loadAnnotationClass(javaxClassName);
++        if (annotationClass != null && method.getAnnotation((Class) annotationClass) != null) {
++            return true;
++        }
++        annotationClass = loadAnnotationClass(jakartaClassName);
++        if (annotationClass != null && method.getAnnotation((Class) annotationClass) != null) {
++            return true;
++        }
++        return false;
++    }
++
++    private static Class<?> loadAnnotationClass(String className) {
++        try {
++            return Class.forName(className);
++        } catch (ClassNotFoundException e) {
++            return null;
++        }
++    }
++
++    @SuppressWarnings("unchecked")
+     public static String getHttpMethodFromCustomAnnotations(Method method) {
+         for (Annotation methodAnnotation : method.getAnnotations()) {
+             HttpMethod httpMethod = methodAnnotation.annotationType().getAnnotation(HttpMethod.class);
+             if (httpMethod != null) {
+                 return httpMethod.value().toLowerCase();
+             }
++            Class<?> jakartaHttpMethod = loadAnnotationClass("jakarta.ws.rs.HttpMethod");
++            if (jakartaHttpMethod != null) {
++                Object jakartaAnnotation = methodAnnotation.annotationType().getAnnotation((Class) jakartaHttpMethod);
++                if (jakartaAnnotation != null) {
++                    try {
++                        return ((String) jakartaAnnotation.getClass().getMethod("value").invoke(jakartaAnnotation)).toLowerCase();
++                    } catch (Exception e) {
++                        // ignore
++                    }
++                }
++            }
+         }
+         return null;
+     }
